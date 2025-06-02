@@ -112,39 +112,56 @@ class AtroposDataset(IterableDataset):
             self.logger.error(f"Unexpected error fetching from {fetch_url}: {e}")
             return []
 
-    def _to_tensors(self, data: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+    def _to_tensors(self, data: List[Dict[str, Any]]) -> Dict[str, Any]: # Return Any for dict value type
         if not data:
             self.logger.warning("_to_tensors received empty data list.")
             return {}
 
         batch_texts = []
-        # prompt_lengths_char = [] # Not strictly needed for this version of _to_tensors
+        # Store prompt token lengths to be included in the output batch
+        batch_prompt_token_lengths: List[int] = [] 
         
         for group in data:
             prompt = group.get("prompt", "")
             response = group.get("response", "")
-            # For tokenization, usually concatenate prompt and response.
-            # The TestTokenizer used in tests adds EOS if add_special_tokens=True.
-            # If a real tokenizer handles prompt/response separation differently (e.g. specific chat template),
-            # this part or the tokenizer calls would need adjustment.
             text_sequence = prompt + response 
             batch_texts.append(text_sequence)
-            # prompt_lengths_char.append(len(prompt)) # Original char length, for reference or debugging
+            
+            # Calculate prompt_token_len using the tokenizer
+            # This should be the length of the prompt part *as it appears in the tokenized text_sequence*
+            # For simplicity and consistency with current _to_tensors, tokenize prompt separately without special tokens
+            # that are only added to the full sequence.
+            # This calculation must be very robust for real models and tokenizers.
+            try:
+                # If tokenizer is HF, encode_plus might be better for just getting tokens.
+                # For DummyTokenizer or TestTokenizer, .encode() is fine.
+                if hasattr(self.tokenizer, 'encode') and callable(self.tokenizer.encode):
+                    # Assuming encode returns a list of token IDs or a dict with "input_ids"
+                    prompt_only_encoded = self.tokenizer.encode(prompt, add_special_tokens=False)
+                    if isinstance(prompt_only_encoded, dict) and "input_ids" in prompt_only_encoded:
+                        # This case was added to TestTokenizer in a recent test update
+                        prompt_token_len_val = len(prompt_only_encoded["input_ids"])
+                    elif isinstance(prompt_only_encoded, list):
+                         prompt_token_len_val = len(prompt_only_encoded)
+                    else:
+                        self.logger.warning(f"Unexpected output from tokenizer.encode for prompt: {prompt_only_encoded}. Defaulting prompt length to 0.")
+                        prompt_token_len_val = 0
+                else: # Fallback if tokenizer doesn't have a simple .encode()
+                    self.logger.warning("Tokenizer does not have a simple .encode() method for prompt length calculation. Defaulting to 0.")
+                    prompt_token_len_val = 0
+            except Exception as e_tok:
+                self.logger.error(f"Error tokenizing prompt '{prompt}' separately: {e_tok}. Defaulting prompt length to 0.")
+                prompt_token_len_val = 0
+            batch_prompt_token_lengths.append(prompt_token_len_val)
 
-
-        # Tokenize all text sequences in a batch
         try:
             tokenized_batch = self.tokenizer.batch_encode_plus(
-                batch_texts,
-                add_special_tokens=True, # Crucial: determines if EOS is added by TestTokenizer
-                padding="max_length",
-                truncation=True,
-                max_length=self.max_seq_len,
-                return_tensors="pt",
-                return_attention_mask=True
+                batch_texts, add_special_tokens=True, padding="max_length",
+                truncation=True, max_length=self.max_seq_len,
+                return_tensors="pt", return_attention_mask=True
             )
         except Exception as e:
-            self.logger.error(f"Error during batch tokenization: {e}")
+            self.logger.error(f"Error during batch tokenization: {e}", exc_info=True)
             return {}
 
         input_ids = tokenized_batch["input_ids"]
@@ -156,65 +173,56 @@ class AtroposDataset(IterableDataset):
 
         for i in range(current_batch_size):
             group = data[i]
-            
-            # Determine prompt token length.
-            # This relies on self.tokenizer.encode behaving consistently for prompt-only vs part of combined sequence.
-            # For TestTokenizer: encode(prompt, add_special_tokens=False) will give raw token count for prompt.
-            prompt_text = group.get("prompt", "")
-            prompt_only_tokens = self.tokenizer.encode(prompt_text, add_special_tokens=False)
-            prompt_token_len_val = len(prompt_only_tokens["input_ids"]) # Get the list of IDs then its length
+            prompt_token_len_val = batch_prompt_token_lengths[i] # Use pre-calculated length
+            actual_seq_len = int(attention_mask[i].sum())
 
-            actual_seq_len = int(attention_mask[i].sum()) # Number of non-padding tokens in the current sequence
+            token_advantages_data = group.get("token_advantages")
+            reward_data = group.get("reward")
+            logprobs_data = group.get("logprobs") 
 
-            token_advantages_data = group.get("token_advantages") # List of floats for response tokens
-            reward_data = group.get("reward") # Scalar float
-            logprobs_data = group.get("logprobs") # List of floats (assumed for response tokens primarily)
-
-            for j in range(actual_seq_len): # Iterate through actual tokens (non-padding)
-                if j < prompt_token_len_val: # Token is part of the prompt
+            for j in range(actual_seq_len):
+                if j < prompt_token_len_val:
                     advantages[i, j] = 0.0
-                    # old_logprobs for prompt tokens:
-                    # If logprobs_data is for the whole sequence (prompt+response)
-                    if logprobs_data and j < len(logprobs_data): # Check if logprobs_data is long enough
+                    if logprobs_data and j < len(logprobs_data):
                         old_logprobs[i, j] = float(logprobs_data[j])
-                    else: # Otherwise, 0 or ignore_index for prompt logprobs
+                    else:
                         old_logprobs[i, j] = 0.0 
-                else: # Token is part of the response
+                else: 
                     response_token_index = j - prompt_token_len_val
-                    
-                    # Set advantages for response tokens
                     if token_advantages_data and response_token_index < len(token_advantages_data):
                         advantages[i, j] = float(token_advantages_data[response_token_index])
                     elif reward_data is not None:
                         advantages[i, j] = float(reward_data)
                     else:
-                        advantages[i, j] = 0.0 # Default if no reward/token_advantages info for response
+                        advantages[i, j] = 0.0
 
-                    # Set old_logprobs for response tokens
                     if logprobs_data:
-                        # Option 1: logprobs_data is for the whole sequence (prompt+response)
-                        # if j < len(logprobs_data):
-                        #    old_logprobs[i, j] = float(logprobs_data[j])
-                        # Option 2: logprobs_data is only for response tokens
-                        if response_token_index < len(logprobs_data):
-                            old_logprobs[i, j] = float(logprobs_data[response_token_index])
-                        # Option 3: logprobs_data is for the whole sequence but token_advantages was also present
-                        # (implies logprobs_data might be structured differently or we prioritize one source)
-                        # The prompt specified "logprobs (assumed to be a list of log probabilities for tokens in the sequence, or at least response tokens)"
-                        # Let's assume for now: if logprobs_data is given, it's for response tokens if token_advantages is also given,
-                        # otherwise it might be for the whole sequence. This logic can be ambiguous.
-                        # A simpler, common case: logprobs are provided *only* for the response tokens.
-                        # The current code with `response_token_index < len(logprobs_data)` implements this for response.
-                        else: # If logprobs_data is shorter than current response token index
-                            old_logprobs[i, j] = 0.0 # Or ignore_index
-                    else: # No logprobs_data provided
-                        old_logprobs[i, j] = 0.0 # Or ignore_index
+                        # This logic for logprobs needs to be clear: are they for all tokens or just response?
+                        # Assuming logprobs_data, if present, covers the response tokens primarily.
+                        # If its length matches response token count:
+                        # num_response_tokens_expected = actual_seq_len - prompt_token_len_val
+                        # if len(logprobs_data) == num_response_tokens_expected and response_token_index < len(logprobs_data):
+                        #    old_logprobs[i,j] = float(logprobs_data[response_token_index])
+                        # elif j < len(logprobs_data): # Or if it's for the whole sequence
+                        #    old_logprobs[i,j] = float(logprobs_data[j])
+                        # For now, simplified: assume logprobs are for response if token_advantages is not present (as per previous logic)
+                        # This part is still a bit ambiguous from requirements.
+                        # Using the logic from previous version of _to_tensors for old_logprobs:
+                        if response_token_index < len(logprobs_data): # Assumes logprobs are for response if provided
+                             old_logprobs[i, j] = float(logprobs_data[response_token_index])
+                        elif j < len(logprobs_data) and not token_advantages_data: # Fallback if logprobs might be full seq
+                             old_logprobs[i, j] = float(logprobs_data[j])
+                        else:
+                             old_logprobs[i, j] = 0.0
+                    else:
+                        old_logprobs[i, j] = 0.0
                         
         return {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "advantages": advantages,
-            "old_logprobs": old_logprobs
+            "old_logprobs": old_logprobs,
+            "prompt_token_lengths": batch_prompt_token_lengths # Add this to the output
         }
 
     def __iter__(self):

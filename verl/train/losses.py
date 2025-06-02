@@ -91,6 +91,47 @@ def advantage_weighted_loss(
             
     return total_loss
 
-# Placeholder for kl_penalty_loss (Task 2.4)
-# def kl_penalty_loss(curr_logits: torch.Tensor, ref_logits: torch.Tensor) -> torch.Tensor:
-#     pass
+# Placeholder for kl_penalty_loss (Task 2.4) - Now implementing it.
+def kl_penalty_loss(
+    curr_logits: torch.Tensor,    # Shape: [B, T, V] - Logits from the current policy
+    ref_logits: torch.Tensor     # Shape: [B, T, V] - Logits from the reference policy
+) -> torch.Tensor:
+    """
+    Computes the KL divergence penalty between the current policy and a reference policy.
+    KL(current_policy || reference_policy) per token, then averaged over all tokens.
+
+    Args:
+        curr_logits: Logits from the current policy, shape [B, T, V].
+        ref_logits: Logits from the reference policy, shape [B, T, V].
+                     These should be detached from the computation graph if the reference model is fixed.
+
+    Returns:
+        A scalar tensor representing the mean KL divergence per token.
+    """
+    if curr_logits.shape != ref_logits.shape:
+        raise ValueError(
+            f"curr_logits shape {curr_logits.shape} must match ref_logits shape {ref_logits.shape}."
+        )
+
+    # It's good practice to ensure ref_logits don't contribute to gradients if it's a fixed reference
+    ref_logits_detached = ref_logits.detach()
+
+    curr_log_probs = F.log_softmax(curr_logits, dim=-1)
+    ref_log_probs = F.log_softmax(ref_logits_detached, dim=-1) # Use detached ref_logits
+
+    # curr_probs = F.softmax(curr_logits, dim=-1) # Can be calculated from curr_log_probs too
+    curr_probs = torch.exp(curr_log_probs)
+
+    # KL divergence D_KL(P || Q) = sum P(x) * (log P(x) - log Q(x))
+    # Here, P is current policy, Q is reference policy.
+    kl_div_per_element = curr_probs * (curr_log_probs - ref_log_probs)
+    
+    # Sum over the vocabulary dimension (V) to get KL divergence per token position
+    kl_div_per_token = torch.sum(kl_div_per_element, dim=-1)
+
+    # Average over all tokens in the batch (batch_size * seq_len)
+    # This assumes KL penalty is applied to all tokens, including prompt/padding.
+    # If a mask is needed, it should be passed as an argument.
+    mean_kl_div = kl_div_per_token.mean()
+            
+    return mean_kl_div
