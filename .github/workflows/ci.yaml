@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  CI:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11"] # Add other versions if needed
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+        if [ -f dev-requirements.txt ]; then pip install -r dev-requirements.txt; fi
+        pip install -r requirements.txt
+        pip install pytest # Ensure pytest is installed
+        pip install mypy # Ensure mypy is installed for pre-commit
+        pip install ruff # Ensure ruff is installed for pre-commit
+    - name: Run pre-commit checks
+      run: |
+        pre-commit run --all-files
+    - name: Run Pytest
+      run: |
+        pytest -q --maxfail=1 --disable-warnings
+
+  GPU_CI:
+    runs-on: self-hosted # This would typically be a self-hosted runner with GPU
+    # Alternatively, could use a cloud provider's GPU runner action
+    # For now, let's make it runnable on ubuntu-latest but expect it to fail/skip if no GPU
+    # needs: [CI] # Optionally, make it dependent on the main CI job
+    strategy:
+      matrix:
+        python-version: ["3.10"] 
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies (including PyTorch CUDA)
+      run: |
+        python -m pip install --upgrade pip
+        # The command to install PyTorch with CUDA can vary.
+        # Example: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+        # For now, assume general dependencies are in requirements.txt and CUDA specific ones might need to be added or are included there.
+        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+        if [ -f dev-requirements.txt ]; then pip install -r dev-requirements.txt; fi
+        pip install -r requirements.txt 
+        pip install pytest torch # Ensure torch is installed
+    - name: Run CUDA availability smoke test
+      run: |
+        # This test (tests/test_dummy_cuda.py) will be created in a subsequent step.
+        # It should check for CUDA and assert a simple CUDA operation.
+        # If no GPU is present, the test itself should handle skipping gracefully.
+        pytest tests/test_dummy_cuda.py
