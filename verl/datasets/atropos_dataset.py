@@ -92,24 +92,43 @@ class AtroposDataset(IterableDataset):
 
 
     async def _fetch_once(self) -> List[Dict[str, Any]]:
+        # self.api_url and self.batch_size are from __init__
         fetch_url = f"{self.api_url}/batch?size={self.batch_size}"
-        self.logger.debug(f"Fetching data from {fetch_url}")
+        # Ensure logger is present, initialized in __init__
+        
+        self.logger.debug(f"Fetching rollout batch: URL='{fetch_url}', Requested BatchSize={self.batch_size}")
+        
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(fetch_url) as response:
-                    response.raise_for_status() 
+                    status_code = response.status # Get status code
+                    self.logger.debug(f"Received response from {fetch_url}, Status={status_code}")
+                    
+                    response.raise_for_status() # Raises an error for bad status codes (4xx or 5xx)
+                    
+                    # Ensure response is valid JSON before parsing
+                    if 'application/json' not in response.content_type:
+                        self.logger.error(f"Unexpected content type from {fetch_url}: {response.content_type}. Expected application/json.")
+                        return [] # Or handle as error appropriate for your case
+
                     data = await response.json()
-                    # Assuming data is a list of rollout groups
+                    
                     if not isinstance(data, list):
-                        self.logger.error(f"Expected a list from {fetch_url}, got {type(data)}. Data: {str(data)[:100]}")
-                        return [] # Return empty on unexpected format
-                    self.logger.debug(f"Successfully fetched {len(data)} groups.")
+                        self.logger.error(f"Unexpected data format from {fetch_url}. Expected a list of groups, got {type(data)}.")
+                        # Potentially log part of the data if small and safe for debugging
+                        # self.logger.debug(f"Problematic data sample (first 100 chars): {str(data)[:100]}")
+                        return []
+
+                    self.logger.debug(f"Successfully fetched {len(data)} groups from {fetch_url} (requested size: {self.batch_size}).")
                     return data
-        except aiohttp.ClientError as e:
-            self.logger.error(f"AIOHTTP client error fetching from {fetch_url}: {e}")
+        except aiohttp.ClientResponseError as e_resp: # More specific exception for HTTP errors after raise_for_status
+            self.logger.error(f"HTTP error fetching from {fetch_url}: Status={e_resp.status}, Message='{e_resp.message}', Headers='{e_resp.headers}'")
+            return []
+        except aiohttp.ClientError as e_client: # Other client errors (connection, timeout etc.)
+            self.logger.error(f"AIOHTTP client error fetching from {fetch_url}: {e_client}")
             return [] 
-        except Exception as e:
-            self.logger.error(f"Unexpected error fetching from {fetch_url}: {e}")
+        except Exception as e_general: # Catch-all for other unexpected errors (e.g., JSON parsing if not caught by content_type check)
+            self.logger.error(f"Unexpected error fetching or parsing data from {fetch_url}: {e_general}", exc_info=True)
             return []
 
     def _to_tensors(self, data: List[Dict[str, Any]]) -> Dict[str, Any]: # Return Any for dict value type

@@ -11,13 +11,15 @@ from verl.datasets.atropos_dataset import AtroposDataset, DummyTokenizer # Use D
 from verl.atropos_inference import EmbeddedInferenceServer 
 # ExternalInferenceWrapper is not yet defined, so create a placeholder for it.
 # Helper model/tokenizer loaders (placeholders for now)
+import time # For test_mode_iteration_sleep_s, already added in prev step, ensuring it's there. Will be consolidated by linter.
 
 # Add new imports for loss functions and mask builder
 from verl.train.utils import build_loss_mask
 from verl.train.losses import advantage_weighted_loss, kl_penalty_loss
-# Ensure torch is imported if not already at the top for torch.Tensor hints
-# import torch # Already imported at the top
-# from typing import Dict, Any, Optional, Iterator, List # Ensure all are present (already at top)
+from torch.utils.tensorboard import SummaryWriter # Add this
+import json # Add this
+from datetime import datetime # Add this
+from pathlib import Path # Add this if not already fully used (it is, but good to be explicit for this change)
 
 # --- Placeholders / Dummies for external dependencies ---
 class VeRLTrainer: # Dummy base class
@@ -176,8 +178,20 @@ class AtroposGrpoTrainer(VeRLTrainer):
         # Optimizer for the training model
         self.optimizer = optim.AdamW(self.training_model.parameters(), lr=config.lr)
         
-        self.logger.info("AtroposGrpoTrainer initialized successfully.")
-
+        # Metrics Export Setup
+        run_name = f"grpo_{datetime.now().strftime('%Y%m%d-%H%M%S')}_{self.config.model.replace('/', '_')}"
+        self.log_dir = Path("runs") / run_name
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.summary_writer = SummaryWriter(log_dir=str(self.log_dir))
+        
+        self.metrics_dir = Path("metrics")
+        self.metrics_dir.mkdir(parents=True, exist_ok=True)
+        self.metrics_file = self.metrics_dir / "logs.jsonl"
+        
+        self.logger.info(f"TensorBoard logs will be saved to: {self.log_dir}")
+        self.logger.info(f"JSONL metrics will be saved to: {self.metrics_file}")
+        self.logger.info("AtroposGrpoTrainer initialized successfully for metrics.") # Updated log msg
+    
     # --- Method Placeholders ---
     def sync_weights(self):
         """
@@ -272,51 +286,146 @@ class AtroposGrpoTrainer(VeRLTrainer):
         raise ValueError("Cannot determine prompt_end_positions: 'prompt_token_lengths' missing and no 'input_ids' in batch.")
 
 
-    def compute_loss(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor: 
-        self.logger.debug("compute_loss called (placeholder).")
-        # Actual implementation will use self.training_model, self.ref_model,
-        # and functions from verl.train.losses (advantage_weighted_loss, kl_penalty_loss)
-        # For now, returning a dummy loss that requires grad.
-        # Example: output = self.training_model(batch["input_ids"], attention_mask=batch["attention_mask"])
-        # return output.mean() 
-        return torch.tensor(0.0, device=self.device, requires_grad=True)
+    def compute_loss(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]: # Return dict of losses
+        """
+        Computes the GRPO loss for a given batch of data.
+        The batch is expected to contain 'input_ids', 'attention_mask', 
+        'old_logprobs', 'advantages', and 'prompt_token_lengths'.
+        """
+        self.logger.debug("Computing loss for batch...")
 
-    def train_one_iteration(self) -> bool:
-        self.logger.debug("train_one_iteration called.")
+        input_ids = batch.get("input_ids")
+        attention_mask = batch.get("attention_mask") 
+        old_logprobs = batch.get("old_logprobs")
+        advantages = batch.get("advantages")
+
+        if not all(isinstance(t, torch.Tensor) for t in [input_ids, attention_mask, old_logprobs, advantages]):
+            self.logger.error("Batch is missing required tensor keys (input_ids, attention_mask, old_logprobs, advantages) or they are not tensors. Cannot compute loss.")
+            # Return dict with zero losses that require grad to prevent crashes in the training loop
+            return {"total_loss": torch.tensor(0.0, device=self.device, requires_grad=True, dtype=torch.float32),
+                    "ppo_objective": torch.tensor(0.0, device=self.device), 
+                    "kl_penalty": torch.tensor(0.0, device=self.device), 
+                    "kl_divergence_raw": torch.tensor(0.0, device=self.device)} 
+        
+        # 1. Get current model logits
+        try:
+            curr_logits = self.training_model(input_ids, attention_mask=attention_mask) # Shape: [B, T, V]
+        except Exception as e: # pragma: no cover
+            self.logger.error(f"Error during training_model forward pass: {e}", exc_info=True)
+            raise 
+
+        # 2. Determine action_ids
+        action_ids = input_ids 
+
+        # 3. Get prompt_end_positions and build loss_mask
+        prompt_end_positions = self._get_prompt_end_positions(batch) 
+        try:
+            loss_m = build_loss_mask(input_ids, prompt_end_positions) 
+            loss_m = loss_m.to(self.device) 
+        except Exception as e: # pragma: no cover
+            self.logger.error(f"Error building loss mask: {e}", exc_info=True)
+            self.logger.warning("Falling back to a loss_mask of all ones due to error.")
+            loss_m = torch.ones_like(input_ids, dtype=torch.float32, device=self.device)
+
+        # 4. Compute PPO objective (policy loss + entropy bonus)
+        try:
+            # advantage_weighted_loss returns the combined PPO objective value (policy_loss - entropy_term)
+            policy_objective_val = advantage_weighted_loss(
+                curr_logits=curr_logits,
+                action_ids=action_ids,
+                old_logprobs=old_logprobs,
+                advantages=advantages,
+                loss_mask=loss_m, 
+                clip_ratio=self.config.clip_ratio,
+                entropy_coef=self.config.entropy_coef
+            )
+            self.logger.debug(f"Advantage-weighted PPO objective (policy loss - entropy bonus): {policy_objective_val.item()}")
+        except Exception as e: # pragma: no cover
+            self.logger.error(f"Error computing advantage_weighted_loss: {e}", exc_info=True)
+            raise 
+
+        # 5. Compute KL penalty if reference model exists
+        kl_div_val = torch.tensor(0.0, device=self.device)
+        kl_penalty_val = torch.tensor(0.0, device=self.device)
+        if self.ref_model is not None and self.config.kl_coef > 0:
+            self.logger.debug("Computing KL penalty with reference model...")
+            try:
+                with torch.no_grad(): 
+                    ref_logits = self.ref_model(input_ids, attention_mask=attention_mask) 
+                
+                kl_div_val = kl_penalty_loss(curr_logits, ref_logits.detach()) 
+                self.logger.debug(f"Raw KL divergence: {kl_div_val.item()}")
+                
+                kl_penalty_val = self.config.kl_coef * kl_div_val
+                self.logger.debug(f"KL penalty ({self.config.kl_coef} * KL): {kl_penalty_val.item()}")
+            except Exception as e: # pragma: no cover
+                self.logger.error(f"Error computing KL penalty: {e}", exc_info=True)
+        
+        total_loss = policy_objective_val + kl_penalty_val
+        self.logger.debug(f"Total computed loss for batch: {total_loss.item()}")
+
+        return {
+            "total_loss": total_loss,
+            "ppo_objective": policy_objective_val, 
+            "kl_penalty": kl_penalty_val,
+            "kl_divergence_raw": kl_div_val 
+        }
+
+
+    def train_one_iteration(self) -> Optional[Dict[str, float]]: # Return dict of avg losses for logging
+        self.logger.debug(f"Starting train_one_iteration for iteration {getattr(self, 'current_iteration_num', 'N/A') + 1}")
         self.sync_weights() # Ensure this is called
         
         batch = self.fetch_rollouts()
         if not batch: 
             self.logger.info("No data from fetch_rollouts. Skipping training step for this iteration.")
-            return False 
+            return None # Return None to signal no training happened
 
         self.training_model.train() # Ensure model is in training mode for this iteration
         
-        # Add conditional sleep for testing graceful shutdown
-        # This sleep should ideally be before the optimization loop or at a point
-        # where interrupting the trainer is meaningful for testing cleanup.
-        # Placing it before PPO epochs loop.
-        if hasattr(self.config, 'test_mode_iteration_sleep_s') and self.config.test_mode_iteration_sleep_s > 0:
+        if hasattr(self.config, 'test_mode_iteration_sleep_s') and self.config.test_mode_iteration_sleep_s > 0: # pragma: no cover
             self.logger.info(f"TEST MODE: Sleeping for {self.config.test_mode_iteration_sleep_s}s in train_one_iteration.")
-            import time # Make sure time is imported in this file
             time.sleep(self.config.test_mode_iteration_sleep_s)
 
-        # PPO typically involves multiple optimization epochs on the same batch of rollouts
-        for ppo_epoch in range(self.config.ppo_epochs): # Corrected variable name from prompt
-            # In a more complex setup, batch might be further divided into mini-batches here.
-            # For now, assume compute_loss processes the entire fetched batch.
-            
-            loss = self.compute_loss(batch) # This needs to use all relevant parts of the batch
+        # Store losses from each PPO epoch for this batch
+        # Initialize with lists to append to.
+        epoch_losses: Dict[str, List[float]] = {"total_loss": [], "ppo_objective": [], "kl_penalty": [], "kl_divergence_raw": []}
+
+        for ppo_epoch_num in range(self.config.ppo_epochs): 
+            loss_components = self.compute_loss(batch) 
+            total_loss = loss_components["total_loss"]
             
             self.optimizer.zero_grad()
-            loss.backward()
-            # Optional: Gradient clipping (common in PPO)
-            # torch.nn.utils.clip_grad_norm_(self.training_model.parameters(), max_norm=1.0) # Example
+            total_loss.backward()
             self.optimizer.step()
             
-            self.logger.debug(f"PPO Epoch {ppo_epoch+1}/{self.config.ppo_epochs}, Loss: {loss.item()}") # Corrected variable name
+            self.logger.debug(f"Iter {getattr(self, 'current_iteration_num', 'N/A') + 1}/PPO Epoch {ppo_epoch_num+1}: TotalLoss={total_loss.item():.4f}, PPO_Obj={loss_components['ppo_objective'].item():.4f}, KLpen={loss_components['kl_penalty'].item():.4f}")
+            for key, value_tensor in loss_components.items():
+                # Ensure key exists in epoch_losses, which it should from initialization
+                epoch_losses[key].append(value_tensor.item()) # Store scalar loss value
         
-        return True # Indicate that training occurred for this iteration
+        # Average losses over PPO epochs for this batch
+        avg_losses = {key: sum(values)/len(values) if values else 0.0 for key, values in epoch_losses.items()}
+        
+        advantages_tensor = batch.get("advantages")
+        # Ensure input_ids is available for building loss mask for advantages mean calculation
+        input_ids_for_mask = batch.get("input_ids")
+        avg_reward_or_advantage_val = 0.0
+        if advantages_tensor is not None and input_ids_for_mask is not None:
+            # We need prompt_end_positions to build the correct mask for advantages.
+            # _get_prompt_end_positions needs the full batch dict.
+            prompt_end_pos_for_adv = self._get_prompt_end_positions(batch)
+            loss_mask_for_adv_mean = build_loss_mask(input_ids_for_mask, prompt_end_pos_for_adv).to(self.device)
+            
+            masked_advantages = advantages_tensor * loss_mask_for_adv_mean
+            num_active_elements = loss_mask_for_adv_mean.sum()
+            if num_active_elements > 0:
+                avg_reward_or_advantage = masked_advantages.sum() / num_active_elements
+                avg_reward_or_advantage_val = avg_reward_or_advantage.item()
+        
+        avg_losses["reward_mean_advantages"] = avg_reward_or_advantage_val
+            
+        return avg_losses
 
 
     def train(self, num_iterations: Optional[int] = None):
@@ -325,36 +434,63 @@ class AtroposGrpoTrainer(VeRLTrainer):
         
         self.logger.info(f"Starting GRPO training for {num_iterations} iterations.")
         
-        # Start inference server before training loop if not already started by __init__
-        # (or if it was stopped previously)
         if hasattr(self.inference_server, 'start') and \
-           (not hasattr(self.inference_server, 'is_alive') or not self.inference_server.is_alive()): # Simplified check
+           (not hasattr(self.inference_server, 'is_alive') or not getattr(self.inference_server, 'is_alive', lambda: True)()): # More robust check for is_alive
             try:
                 self.logger.info("Attempting to start inference server before training loop.")
                 self.inference_server.start()
-                # Optionally, add a readiness check here for the inference server
             except Exception as e: # pragma: no cover
-                self.logger.error(f"Failed to start inference server before training: {e}")
-                return # Cannot proceed if inference server (needed for rollouts via AtroposDataset) fails
+                self.logger.error(f"Failed to start inference server before training: {e}", exc_info=True)
+                return 
 
         for i in range(num_iterations):
+            self.current_iteration_num = i # Store for logging
             self.logger.info(f"Iteration {i+1}/{num_iterations}")
             
-            iteration_trained = self.train_one_iteration()
+            iteration_metrics = self.train_one_iteration() 
             
-            # Hypothetical config to stop if dataset runs out
-            stop_on_empty = getattr(self.config, 'stop_on_empty_rollout', False) 
-            if not iteration_trained and stop_on_empty:
-                 self.logger.info("Stopping training early due to empty rollouts and 'stop_on_empty_rollout' is True.")
+            if iteration_metrics is None: 
+                 self.logger.info("Dataset iterator exhausted or error in fetching. Stopping training.")
                  break
             
-            # Optional: Log metrics, save checkpoints, etc.
-            # if (i + 1) % self.config.save_interval == 0: self.save_checkpoint()
+            # Log to TensorBoard
+            self.summary_writer.add_scalar("rollout/reward_mean_advantages", iteration_metrics.get("reward_mean_advantages",0.0), i)
+            self.summary_writer.add_scalar("train/total_loss", iteration_metrics.get("total_loss",0.0), i)
+            self.summary_writer.add_scalar("train/ppo_objective", iteration_metrics.get("ppo_objective",0.0), i)
+            self.summary_writer.add_scalar("train/kl_penalty", iteration_metrics.get("kl_penalty",0.0), i)
+            self.summary_writer.add_scalar("train/kl_divergence_raw", iteration_metrics.get("kl_divergence_raw",0.0), i)
+
+            # Append to JSONL
+            log_entry = {
+                "iteration": i + 1, # Use 1-based iteration for logging
+                "timestamp": datetime.now().isoformat(),
+                "reward_mean_advantages": iteration_metrics.get("reward_mean_advantages",0.0),
+                "total_loss": iteration_metrics.get("total_loss",0.0),
+                "ppo_objective": iteration_metrics.get("ppo_objective",0.0), 
+                "kl_penalty": iteration_metrics.get("kl_penalty",0.0),
+                "kl_divergence_raw": iteration_metrics.get("kl_divergence_raw",0.0)
+            }
+            try:
+                with open(self.metrics_file, 'a') as f:
+                    f.write(json.dumps(log_entry) + '\n')
+            except Exception as e_json: # pragma: no cover
+                self.logger.error(f"Failed to write metrics to JSONL file {self.metrics_file}: {e_json}")
+            
+            stop_on_empty = getattr(self.config, 'stop_on_empty_rollout', False) 
+            if iteration_metrics is None and stop_on_empty: # This check is now redundant due to break above
+                 self.logger.info("Stopping training early due to empty rollouts and 'stop_on_empty_rollout' is True.")
+                 break # Should have already broken if iteration_metrics is None
 
         self.logger.info("GRPO training finished.")
+        self.cleanup() 
 
     def cleanup(self): 
         self.logger.info("Cleaning up AtroposGrpoTrainer resources...")
-        if hasattr(self.inference_server, 'stop'):
+        if hasattr(self.inference_server, 'stop') and callable(self.inference_server.stop):
+            self.logger.info(f"Stopping inference server: {type(self.inference_server).__name__}")
             self.inference_server.stop()
+        
+        if hasattr(self, 'summary_writer') and self.summary_writer: # Check if summary_writer exists
+            self.summary_writer.close()
+            self.logger.info("TensorBoard SummaryWriter closed.")
         self.logger.info("Cleanup complete.")

@@ -1,0 +1,66 @@
+# configs/atropos_example.yaml
+
+# --- Model Configuration ---
+# Specify the HuggingFace model name or path to your local model.
+# This model will be used for both training and inference unless a reference_model is specified.
+model: "hf-internal-testing/tiny-random-Llama-2" # TODO: Replace with your desired HuggingFace model path/name
+
+# Optional: Specify a reference model for KL divergence calculations.
+# If None, KL divergence penalty will not be used (or kl_coef should be 0).
+reference_model: null # Example: "NousResearch/Llama-2-7b-hf" or path to a local model
+
+# --- Environment Configuration ---
+# List of Atropos environments to run. These names should correspond to 
+# environment server scripts (e.g., gsm8k_server.py for "gsm8k").
+# Ensure these environment server scripts are accessible.
+# The `launch_atropos_verl.py` script will look for them under the path specified
+# by its --env-script-path argument (default: "environments/")
+environments:
+  - "gsm8k"       # Example: For math word problems (requires gsm8k_server.py)
+  # - "code_exec"   # Example: For code execution tasks (requires code_exec_server.py)
+  # TODO: Add the names of the environments you want to use.
+
+# --- Server Ports ---
+# Port for the Atropos API server (collects rollouts from environments)
+rollout_server_port: 8000
+
+# Port for the model inference API server
+# This is used by Atropos environments to get model generations.
+# If use_sglang=false, this will be an EmbeddedInferenceServer.
+# If use_sglang=true, this will be an external SGLang/vLLM server (managed by launch script).
+inference_api_port: 8001
+
+# --- Inference Backend ---
+# Set to true to use SGLang as the external inference backend.
+# If false, an EmbeddedInferenceServer (running within the trainer process using transformers)
+# will be used by default.
+# TODO: External vLLM server management by launch script is not fully implemented yet
+#       in the dummy ExternalInferenceWrapper. For now, use_sglang=false is more tested.
+use_sglang: false 
+
+# --- Training Hyperparameters ---
+# These are standard PPO hyperparameters.
+lr: 5.0e-6                # Learning rate
+batch_size: 8             # Number of rollout groups to fetch from Atropos per iteration
+ppo_epochs: 4             # Number of PPO optimization epochs over each collected batch
+clip_ratio: 0.2           # PPO clipping ratio for surrogate objective
+kl_coef: 0.05             # Coefficient for KL divergence penalty (if reference_model is used)
+entropy_coef: 0.01        # Coefficient for entropy bonus in PPO loss
+
+# Total number of training iterations (batches processed)
+num_iterations: 1000
+
+# Model parallelism (for external inference servers like vLLM/SGLang)
+tensor_parallel: 1
+
+# --- Sequence Length ---
+# Maximum sequence length for tokenization and model processing.
+# Adjust based on your model's capabilities and task requirements.
+max_seq_len: 512
+
+# --- Optional: For testing graceful shutdown ---
+# Makes the trainer sleep in each iteration, useful for sending Ctrl+C during a run.
+# test_mode_iteration_sleep_s: 0 # Default to 0 (no sleep)
+
+# --- Optional: For early stopping if dataset ends ---
+# stop_on_empty_rollout: false # Default to false (continue if dataset can be re-iterated)
