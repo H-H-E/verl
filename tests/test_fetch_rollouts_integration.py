@@ -9,31 +9,31 @@ import time # For time.sleep
 
 # Components to test/use
 from verl.atropos_config import AtroposConfig
-from verl.train.grpo_trainer import AtroposGrpoTrainer 
+from verl.train.grpo_trainer import AtroposGrpoTrainer
 # AtroposGrpoTrainer's __init__ uses dummy loaders for model and tokenizer,
 # and AtroposDataset, which are defined in their respective modules.
 
 # --- Mock Atropos API Server ---
-MOCK_API_PORT_TRAINER_TEST = 8110 
+MOCK_API_PORT_TRAINER_TEST = 8110
 MOCK_API_HOST_TRAINER_TEST = "localhost"
 
 @pytest.fixture(scope="function")
 def mock_rollout_api_for_trainer():
     app = FastAPI()
     # Initialize with a structure that AtroposDataset expects (list of dicts)
-    app.state.rollout_data_store: List[Dict[str, Any]] = [] 
+    app.state.rollout_data_store: List[Dict[str, Any]] = []
 
     @app.get("/batch")
     async def get_rollout_batch(size: int):
         if not app.state.rollout_data_store:
-            return [] 
-        
+            return []
+
         # Serve data based on size, but for this test, we usually configure one batch.
         # If test configures more data than 'size', it will be truncated here.
         data_to_serve = app.state.rollout_data_store[:size]
         # To simulate one-shot data for exhaustion test, clear after serving if needed by test logic.
         # Test logic below will explicitly clear it.
-        return data_to_serve 
+        return data_to_serve
 
     # Add a health endpoint for robust server start check
     @app.get("/health")
@@ -44,7 +44,7 @@ def mock_rollout_api_for_trainer():
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
-    
+
     # Wait for server to be ready
     health_url = f"http://{MOCK_API_HOST_TRAINER_TEST}:{MOCK_API_PORT_TRAINER_TEST}/health"
     server_ready = False
@@ -61,9 +61,9 @@ def mock_rollout_api_for_trainer():
         server.should_exit = True
         thread.join(timeout=1)
         pytest.fail(f"Mock API server failed to start on port {MOCK_API_PORT_TRAINER_TEST}.")
-    
-    yield app 
-    
+
+    yield app
+
     server.should_exit = True
     thread.join(timeout=5)
 
@@ -79,14 +79,14 @@ def test_dataset_connectivity_and_fetch_rollouts(mock_rollout_api_for_trainer):
     """
     # 1. Configure AtroposConfig for the trainer
     config = AtroposConfig(
-        model="dummy-model-for-trainer-test", 
-        environments=["test_env"], 
+        model="dummy-model-for-trainer-test",
+        environments=["test_env"],
         rollout_server_port=MOCK_API_PORT_TRAINER_TEST,
         batch_size=1,
         # Ensure AtroposConfig has default for kl_coef, lr, etc., or set them if needed by GRPO_Trainer's __init__
         # The DummyAtroposConfig should provide these. Let's assume it does.
         # Add max_seq_len, as AtroposGrpoTrainer uses it for AtroposDataset
-        max_seq_len=32 
+        max_seq_len=32
     )
     # If AtroposConfig doesn't have max_seq_len as a field, setattr is needed.
     # Let's assume it's part of the AtroposConfig definition or we add it.
@@ -130,7 +130,7 @@ def test_dataset_connectivity_and_fetch_rollouts(mock_rollout_api_for_trainer):
     assert fetched_batch["old_logprobs"].device == trainer.device
     assert isinstance(fetched_batch["advantages"], torch.Tensor)
     assert fetched_batch["advantages"].device == trainer.device
-    
+
     assert isinstance(fetched_batch["prompt_token_lengths"], list)
     if config.batch_size > 0:
       assert len(fetched_batch["prompt_token_lengths"]) == config.batch_size
@@ -140,12 +140,12 @@ def test_dataset_connectivity_and_fetch_rollouts(mock_rollout_api_for_trainer):
     assert fetched_batch["attention_mask"].shape == (config.batch_size, config.max_seq_len)
     assert fetched_batch["old_logprobs"].shape == (config.batch_size, config.max_seq_len)
     assert fetched_batch["advantages"].shape == (config.batch_size, config.max_seq_len)
-    
+
     # Test exhaustion
     mock_rollout_api_for_trainer.state.rollout_data_store = [] # API now has no data
     exhausted_batch = trainer.fetch_rollouts()
     assert isinstance(exhausted_batch, dict), "fetch_rollouts should return dict on exhaustion."
     assert not bool(exhausted_batch), "Fetched batch should be empty after data exhaustion."
-    
+
     if hasattr(trainer, 'cleanup'): # pragma: no cover (dummy trainer might not have real cleanup)
         trainer.cleanup()

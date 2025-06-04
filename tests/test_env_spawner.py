@@ -25,18 +25,18 @@ DUMMY_ENV_SCRIPTS_DIR.mkdir(exist_ok=True)
 @pytest.fixture(scope="function")
 def dummy_atropos_api_server():
     app = FastAPI()
-    
+
     # State for the dummy API, accessible via app.state
     # Initialize with a structure that _is_env_registered can parse
-    app.state.registered_environments = {"environments": []} 
+    app.state.registered_environments = {"environments": []}
 
     @app.get("/environments")
     async def get_environments_endpoint(): # Renamed to avoid conflict with any potential var named get_environments
         return app.state.registered_environments
 
-    port = 8090 
+    port = 8090
     host = "localhost"
-    
+
     # Check if port is free using a more reliable method for fixtures
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -48,10 +48,10 @@ def dummy_atropos_api_server():
 
     config = uvicorn.Config(app, host=host, port=port, log_level="warning")
     server = uvicorn.Server(config)
-    
+
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
-    
+
     # Wait for server to be ready by polling a simple health endpoint
     health_url = f"http://{host}:{port}/health" # Add a health endpoint to dummy API for robust check
     @app.get("/health")
@@ -73,8 +73,8 @@ def dummy_atropos_api_server():
         thread.join(timeout=2)
         pytest.fail(f"Dummy Atropos API server failed to start on port {port}.")
 
-    yield app 
-    
+    yield app
+
     server.should_exit = True
     thread.join(timeout=5)
 
@@ -101,9 +101,9 @@ print(f"Dummy {env_name}_server.py finished.", flush=True)
         script_path.chmod(0o755) # Make it executable
         created_scripts_paths.append(script_path)
         return script_path
-    
-    yield _create_script 
-    
+
+    yield _create_script
+
     for script_p in created_scripts_paths:
         if script_p.exists():
             script_p.unlink()
@@ -120,10 +120,10 @@ def test_start_env_server_successful_registration(dummy_atropos_api_server, dumm
     '''
     caplog.set_level(logging.INFO) # Capture info logs for debugging if needed
     env_name = "testenv_success"
-    dummy_env_script_factory(env_name) 
+    dummy_env_script_factory(env_name)
 
     rollout_server_url = "http://localhost:8090" # Matches dummy_atropos_api_server
-    inference_url = "http://localhost:8070/v1" 
+    inference_url = "http://localhost:8070/v1"
 
     # Configure dummy API to report env as registered (using one of the formats _is_env_registered checks)
     dummy_atropos_api_server.state.registered_environments["environments"] = [{"name": env_name, "status": "registered"}]
@@ -134,20 +134,20 @@ def test_start_env_server_successful_registration(dummy_atropos_api_server, dumm
             env_name=env_name,
             rollout_server_url=rollout_server_url,
             inference_url=inference_url,
-            env_script_path=str(DUMMY_ENV_SCRIPTS_DIR), 
-            readiness_timeout=5, 
+            env_script_path=str(DUMMY_ENV_SCRIPTS_DIR),
+            readiness_timeout=5,
             poll_interval=1
         )
         assert env_proc is not None, f"start_env_server should return Popen object. Logs: {caplog.text}"
         assert env_proc.poll() is None, f"Env server process should be running. Logs: {caplog.text}"
-        
+
         expected_log_file = LOGS_DIR_TEST / f"env_{env_name}.log"
         assert expected_log_file.exists(), f"Log file {expected_log_file} not created. Logs: {caplog.text}"
 
     finally:
         if env_proc and env_proc.poll() is None:
             stop_env_server(env_proc, env_name=env_name)
-            try: env_proc.wait(timeout=5) 
+            try: env_proc.wait(timeout=5)
             except subprocess.TimeoutExpired: env_proc.kill()
 
 def test_start_env_server_registration_timeout(dummy_atropos_api_server, dummy_env_script_factory, caplog):
@@ -156,7 +156,7 @@ def test_start_env_server_registration_timeout(dummy_atropos_api_server, dummy_e
     '''
     caplog.set_level(logging.INFO)
     env_name = "testenv_reg_timeout"
-    dummy_env_script_factory(env_name) 
+    dummy_env_script_factory(env_name)
 
     rollout_server_url = "http://localhost:8090"
     inference_url = "http://localhost:8070/v1"
@@ -171,7 +171,7 @@ def test_start_env_server_registration_timeout(dummy_atropos_api_server, dummy_e
             rollout_server_url=rollout_server_url,
             inference_url=inference_url,
             env_script_path=str(DUMMY_ENV_SCRIPTS_DIR),
-            readiness_timeout=2, 
+            readiness_timeout=2,
             poll_interval=0.5
         )
         assert env_proc is None, f"start_env_server should return None on registration timeout. Logs: {caplog.text}"
@@ -215,7 +215,7 @@ def test_start_env_server_premature_exit(mock_popen, dummy_atropos_api_server, d
     mock_log_fp.closed = False
     mock_process.stdout = mock_log_fp
     mock_popen.return_value = mock_process
-    
+
     rollout_server_url = "http://localhost:8090"
     inference_url = "http://localhost:8070/v1"
 
@@ -233,7 +233,7 @@ def test_start_env_server_premature_exit(mock_popen, dummy_atropos_api_server, d
 
 def test_stop_env_server_calls_generic_stop():
     mock_proc = mock.Mock(spec=subprocess.Popen)
-    mock_proc.pid = 1234; mock_proc.poll.return_value = None 
+    mock_proc.pid = 1234; mock_proc.poll.return_value = None
     with mock.patch('verl.atropos_env_spawner.generic_stop_server') as mock_gss:
         stop_env_server(mock_proc, "test_stop_env")
         mock_gss.assert_called_once_with(mock_proc, server_name="Environment Server 'test_stop_env'")

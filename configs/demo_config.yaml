@@ -1,0 +1,61 @@
+# configs/demo_config.yaml
+
+# --- Model Configuration ---
+# Using a tiny model name; AtroposGrpoTrainer's dummy loader will handle this.
+# The actual model loaded will be DummyTrainingModel.
+model: "hf-internal-testing/tiny-random-gpt2"
+reference_model: null # No KL penalty for simple demo
+
+# --- Environment Configuration ---
+# This name should match the --expected-env-name passed to dummy_atropos_api_stub.py
+# and the script name dummy_echo_env_server.py (if launch script derives script from env name).
+# The launch script uses --env-script-path and looks for {env_name}_server.py OR {env_name}.py
+# For the demo, we use "echo_demo_env" and the launch script will be pointed to
+# scripts/stubs/ via --env-script-path, where it should find dummy_echo_env_server.py.
+# The launch script will try to find "echo_demo_env_server.py" or "echo_demo_env.py".
+# So, dummy_echo_env_server.py needs to be named appropriately or the launch script's logic adapted.
+# For now, assuming the launch script will find dummy_echo_env_server.py if env_name is "dummy_echo_env".
+# Let's make the environment name in the config match the script name more directly if possible,
+# or ensure the demo script handles this mapping (e.g. by renaming the dummy env script to echo_demo_env_server.py).
+# For this config, we'll use "dummy_echo_env" and the demo.sh will launch scripts/stubs/dummy_echo_env_server.py
+# with --env-script-path scripts/stubs. The launch script will then look for dummy_echo_env_server.py.
+environments:
+  - "dummy_echo_env" # This should make launch_atropos_verl.py look for dummy_echo_env_server.py
+
+# --- Server Ports ---
+# Port for the DUMMY Atropos API server (dummy_atropos_api_stub.py)
+rollout_server_port: 8050 # Unique port for demo's Atropos API stub
+
+# Port for the model inference API server (EmbeddedInferenceServer)
+inference_api_port: 8051 # Unique port for demo's EmbeddedInferenceServer
+
+# --- Inference Backend ---
+use_sglang: false # Ensures EmbeddedInferenceServer is used
+
+# --- Training Hyperparameters ---
+lr: 1.0e-3                # Learning rate (relatively high for quick effect on dummy model)
+batch_size: 2             # Small batch size
+ppo_epochs: 1             # Only one PPO epoch per iteration for speed
+clip_ratio: 0.2
+kl_coef: 0.0              # No KL penalty
+entropy_coef: 0.01
+num_iterations: 3         # Run for 3 iterations as per demo requirement
+tensor_parallel: 1        # Not used by EmbeddedInferenceServer
+
+# --- Sequence Length ---
+max_seq_len: 32           # Small max sequence length for dummy data
+
+# --- Demo Specific Settings ---
+# Makes the trainer sleep in each iteration, useful for observing the demo.
+test_mode_iteration_sleep_s: 2 # Sleep for 2 seconds per iteration
+
+# Note on env_script_path:
+# This config file does not set the --env-script-path for launch_atropos_verl.py.
+# The demo.sh script will need to pass --env-script-path scripts/stubs
+# so that launch_atropos_verl.py can find dummy_echo_env_server.py when "dummy_echo_env" is specified here.
+# To make this clearer, the environment name here ("dummy_echo_env") directly implies
+# the script "dummy_echo_env_server.py" or "dummy_echo_env.py".
+# The `dummy_echo_env_server.py` was created in the previous step.
+```
+
+Self-correction: The environment name in the config (`environments: ["dummy_echo_env"]`) should lead `launch_atropos_verl.py` to look for `dummy_echo_env_server.py` or `dummy_echo_env.py` in the directory specified by `--env-script-path`. Since we created `scripts/stubs/dummy_echo_env_server.py`, using `dummy_echo_env` as the environment name in the YAML is correct, and the demo script will pass `--env-script-path scripts/stubs`.

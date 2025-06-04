@@ -15,12 +15,12 @@ from verl.atropos_api_launcher import start_atropos_api, stop_atropos_api
 # Helper to check if a port is open
 def is_port_in_use(port: int, host: str = "localhost") -> bool:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(0.1) 
+    s.settimeout(0.1)
     try:
         s.bind((host, port))
-        return False 
+        return False
     except socket.error:
-        return True 
+        return True
     finally:
         s.close()
 
@@ -31,14 +31,14 @@ def mock_popen_fixture():
     with mock.patch('subprocess.Popen') as mock_popen_constructor:
         mock_process = mock.Mock(spec=subprocess.Popen)
         mock_process.pid = 12345
-        mock_process.poll.return_value = None 
-        
+        mock_process.poll.return_value = None
+
         mock_log_fp = mock.Mock(spec=open) # Mock the file pointer object
         mock_log_fp.closed = False
         def close_fp():
             mock_log_fp.closed = True
         mock_log_fp.close = mock.Mock(side_effect=close_fp)
-        
+
         # In the code, Popen is called with stdout=log_fp, stderr=subprocess.STDOUT
         # So, proc.stdout would be this log_fp object.
         mock_process.stdout = mock_log_fp
@@ -53,7 +53,7 @@ def test_start_atropos_api_command_not_found(mock_subproc_popen_fnf, caplog):
     '''
     Tests that start_atropos_api handles FileNotFoundError.
     '''
-    test_port = 8088 
+    test_port = 8088
     process = start_atropos_api(port=test_port)
     assert process is None, "start_atropos_api should return None when command is not found."
     assert "'atropos' command not found" in caplog.text # Check for specific log message
@@ -72,21 +72,21 @@ def test_atropos_api_lifecycle_mocked(mock_generic_stop, mock_is_ready, mock_pop
     api_proc = start_atropos_api(port=test_port, host="127.0.0.1", readiness_timeout=10)
 
     assert api_proc is mock_process_instance
-    
+
     expected_command = ["atropos", "run-api", "--port", str(test_port), "--host", "127.0.0.1"]
     # Check that Popen was called. args_list[0][0] gives the first positional arg (the command list)
     # The actual call is mock_popen_constructor(expected_command, stdout=ANY, stderr=ANY)
     # We should check the first argument of the call
     called_command = mock_popen_constructor.call_args[0][0]
     assert called_command == expected_command
-    
+
     expected_health_url = f"http://127.0.0.1:{test_port}/health"
     mock_is_ready.assert_called_once_with(expected_health_url, timeout=10)
 
     # --- Test stop_atropos_api ---
     # Ensure poll returns None initially (running), then 0 (stopped)
-    mock_process_instance.poll.side_effect = [None, 0] 
-    
+    mock_process_instance.poll.side_effect = [None, 0]
+
     stop_atropos_api(api_proc)
     # Check if generic_stop_server was called (assuming it was imported successfully)
     # This depends on 'helpers_imported' being True in atropos_api_launcher.
@@ -110,9 +110,9 @@ def test_start_atropos_api_readiness_fails(mock_generic_stop_cleanup, mock_is_re
     mock_popen_constructor, mock_process_instance = mock_popen_fixture
     test_port = 8081
 
-    api_proc = start_atropos_api(port=test_port, readiness_timeout=0.1) 
+    api_proc = start_atropos_api(port=test_port, readiness_timeout=0.1)
     assert api_proc is None, "start_atropos_api should return None if readiness check fails."
-    
+
     # Check that is_server_ready was called
     expected_health_url = f"http://127.0.0.1:{test_port}/health" # Assuming default host
     mock_is_ready_fail.assert_called_once_with(expected_health_url, timeout=0.1)
@@ -127,7 +127,7 @@ def test_start_atropos_api_readiness_fails(mock_generic_stop_cleanup, mock_is_re
 def test_stop_atropos_api_no_proc(mock_popen_constructor_basic):
     '''Test stop_atropos_api with None process.'''
     # We don't need generic_stop_server mocked here as it shouldn't be called for None proc
-    stop_atropos_api(None) 
+    stop_atropos_api(None)
     # No assertion needed, just checking it runs without error.
     # Can add a check that logger.info was called with "process is None" if logging is captured.
 
@@ -150,7 +150,7 @@ def test_stop_atropos_api_fallback_logic(mock_helpers_flag, mock_popen_fixture):
     Test the fallback termination logic in stop_atropos_api when generic_stop_server is "not imported".
     '''
     _ , mock_process_instance = mock_popen_fixture
-    
+
     # Simulate Popen methods for the fallback logic
     mock_process_instance.poll.side_effect = [None, 0] # Running, then stopped
     mock_process_instance.terminate.return_value = None

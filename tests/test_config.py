@@ -19,11 +19,11 @@ def test_load_minimal_config(tmp_path: Path):
     assert isinstance(config, AtroposConfig)
     assert config.model == "dummy-model"
     assert config.environments == ["gsm8k"]
-    
+
     # Check for default values
     assert config.rollout_server_port == 8000
     assert config.use_sglang is False
-    assert config.batch_size == 12 
+    assert config.batch_size == 12
     assert config.lr == 5e-6
     assert config.clip_ratio == 0.2
     assert config.ppo_epochs == 4
@@ -57,7 +57,7 @@ def test_load_override_defaults(tmp_path: Path):
     assert config.use_sglang is True
     assert config.lr == 1e-5
     assert config.num_iterations == 50
-    
+
     # Check that other defaults are still applied
     assert config.batch_size == 12
     assert config.clip_ratio == 0.2
@@ -80,7 +80,7 @@ def test_load_unknown_fields_ignored(tmp_path: Path):
     assert config.model == "test-model"
     assert config.environments == ["test-env"]
     assert config.rollout_server_port == 8000 # Default
-    
+
     # Assert that unknown fields are not attributes of the config object
     assert not hasattr(config, "unknown_field_1")
     assert not hasattr(config, "another_unknown_param")

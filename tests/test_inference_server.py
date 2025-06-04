@@ -35,9 +35,9 @@ except ImportError:
 skip_heavy_tests_condition = not is_cuda_available
 skip_heavy_tests_reason = "CUDA not available or torch not installed, skipping vLLM/SGLang lifecycle tests."
 
-TEST_MODEL_NAME_VLLM = "h2oai/h2ogpt-oasst1-512-12b" 
+TEST_MODEL_NAME_VLLM = "h2oai/h2ogpt-oasst1-512-12b"
 # Using a smaller, widely available model for SGLang as it's generally more flexible.
-TEST_MODEL_NAME_SGLANG = "facebook/opt-125m" 
+TEST_MODEL_NAME_SGLANG = "facebook/opt-125m"
 
 
 @pytest.mark.skipif(skip_heavy_tests_condition, reason=skip_heavy_tests_reason)
@@ -47,7 +47,7 @@ def test_vllm_server_lifecycle():
     This test is resource-intensive and may require a GPU.
     '''
     test_port = 8060 # Use a non-default port for testing
-    
+
     if is_port_in_use(test_port):
         pytest.skip(f"Port {test_port} is already in use. Skipping test.")
 
@@ -60,13 +60,13 @@ def test_vllm_server_lifecycle():
         )
         assert server_proc is not None, "start_vllm_server should return a Popen object."
         # Give a brief moment for the process to potentially fail fast
-        time.sleep(2) 
+        time.sleep(2)
         assert server_proc.poll() is None, "vLLM server process should be running (or starting)."
 
         expected_log_file = Path("logs") / f"vllm_server_{test_port}.log"
         assert expected_log_file.exists(), f"vLLM log file {expected_log_file} was not created."
 
-        ready_url = f"http://localhost:{test_port}/v1/models" 
+        ready_url = f"http://localhost:{test_port}/v1/models"
         # Increased timeout as model loading can be very slow.
         assert is_server_ready(ready_url, timeout=300.0, poll_interval=10.0), \
             f"vLLM server did not become ready at {ready_url} within timeout. Check logs at {expected_log_file}."
@@ -80,13 +80,13 @@ def test_vllm_server_lifecycle():
                     break
                 time.sleep(1)
             assert not is_port_in_use(test_port), f"Port {test_port} should be freed after stopping vLLM server."
-            
+
             if server_proc.poll() is None:
                 try:
                     server_proc.kill()
                     server_proc.wait(timeout=5)
                 except Exception:
-                    pass 
+                    pass
                 pytest.fail("vLLM server process was not properly terminated by stop_server.")
 
 
@@ -96,7 +96,7 @@ def test_sglang_server_lifecycle():
     Tests the start, readiness check, and stop lifecycle of the SGLang server.
     This test is resource-intensive and may require a GPU.
     '''
-    test_port = 8061 
+    test_port = 8061
 
     if is_port_in_use(test_port):
         pytest.skip(f"Port {test_port} is already in use. Skipping test.")

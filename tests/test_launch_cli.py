@@ -7,7 +7,7 @@ import yaml # To create the fixture file
 import time # For the mock API server, though not directly in this test
 
 # Define project root assuming tests are in tests/something.py
-PROJECT_ROOT = Path(__file__).resolve().parent.parent 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LAUNCH_SCRIPT_PATH = PROJECT_ROOT / "recipe" / "atropos" / "launch_atropos_verl.py"
 
 # Ensure the launch script itself exists, otherwise skip all tests in this file
@@ -15,7 +15,7 @@ if not LAUNCH_SCRIPT_PATH.exists(): # pragma: no cover
     pytest.skip(f"Launch script not found at {LAUNCH_SCRIPT_PATH}, skipping all tests in this file.", allow_module_level=True)
 
 
-@pytest.fixture(scope="module") 
+@pytest.fixture(scope="module")
 def minimal_config_file(tmp_path_factory):
     fixture_dir = tmp_path_factory.mktemp("fixtures")
     # This content should be comprehensive enough for AtroposConfig to load
@@ -25,9 +25,9 @@ def minimal_config_file(tmp_path_factory):
         "environments": ["gsm8k_dummy", "another_dummy_env"],
         "rollout_server_port": 8000,
         "inference_api_port": 8001,
-        "use_sglang": False, 
+        "use_sglang": False,
         "reference_model": None, # Explicitly None
-        "batch_size": 2, 
+        "batch_size": 2,
         "tensor_parallel": 1,
         "lr": 1e-5,
         "clip_ratio": 0.2,
@@ -49,11 +49,11 @@ def test_dry_run_output(minimal_config_file: Path):
     Checks for successful execution (exit code 0) and presence of key phrases in stdout/stderr.
     """
     command = [
-        sys.executable, 
+        sys.executable,
         str(LAUNCH_SCRIPT_PATH),
         "--config", str(minimal_config_file),
         "--dry-run",
-        "--env-script-path", "dummy_env_path_for_dry_run" 
+        "--env-script-path", "dummy_env_path_for_dry_run"
     ]
 
     try:
@@ -68,13 +68,13 @@ def test_dry_run_output(minimal_config_file: Path):
     assert result.returncode == 0, \
         f"Dry run failed with exit code {result.returncode}.\nStdout:\n{result.stdout}\nStderr:\n{result.stderr}"
 
-    output = result.stdout + result.stderr 
+    output = result.stdout + result.stderr
 
     # Positive assertions for key phrases
     assert "--- DRY RUN MODE ---" in output, "Missing start of dry run mode marker."
     assert "Config loaded:" in output, "Missing 'Config loaded' message."
     assert "dummy-cli-model" in output, "Config model 'dummy-cli-model' not mentioned."
-    
+
     # Check for inference server plans (type and port)
     # The launch script logs "Inference Server: Type ... on port ... for model ... (managed by Trainer)."
     assert "Planned: Start Inference Server" in output or "Inference Server: Type" in output, "Missing Inference Server planning."
@@ -83,19 +83,19 @@ def test_dry_run_output(minimal_config_file: Path):
 
     assert "Planned: Start Atropos API Server" in output or "Atropos API Server: Port" in output, "Missing Atropos API Server planning."
     assert "port 8000" in output, "Rollout server port 8000 not mentioned."
-    
+
     assert "Planned: Start Environment Server for 'gsm8k_dummy'" in output or \
            "Environment Server: For 'gsm8k_dummy'" in output, "Missing 'gsm8k_dummy' env planning."
     assert "Planned: Start Environment Server for 'another_dummy_env'" in output or \
            "Environment Server: For 'another_dummy_env'" in output, "Missing 'another_dummy_env' env planning."
     assert "dummy_env_path_for_dry_run" in output, "Specified env-script-path not mentioned."
-           
+
     assert "Planned: Instantiate AtroposGrpoTrainer" in output or "AtroposGrpoTrainer: Model" in output, "Missing Trainer instantiation planning."
     assert "Planned: Call trainer.train(num_iterations=3)" in output or "num_iterations=3" in output, "Missing trainer.train planning with num_iterations."
-    
+
     assert "Planned: Cleanup all resources on exit." in output or "Cleanup all resources on exit" in output, "Missing cleanup planning."
     assert "--- END DRY RUN ---" in output, "Missing end of dry run mode marker."
-    
+
     # Negative assertions: check that no actual error messages are in output
     # These need to be specific enough not to match legitimate "error" in log levels or planning messages.
     # Convert output to lower for case-insensitive matching of error terms.

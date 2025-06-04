@@ -28,8 +28,8 @@ class MockEmbeddedInferenceServer:
     def __init__(self, model_name: str, port: int, device: torch.device):
         self.model_name = model_name
         self.port = port
-        self.device = device 
-        self.model = SimpleTestModel().to(self.device) 
+        self.device = device
+        self.model = SimpleTestModel().to(self.device)
         self.logger = logging.getLogger("MockEmbeddedInferenceServer")
         if not self.logger.hasHandlers(): # pragma: no cover
             logging.basicConfig(level=logging.DEBUG)
@@ -41,13 +41,13 @@ class MockEmbeddedInferenceServer:
         # Ensure state_dict values are on CPU as per weight_sync_manager's behavior
         for k, v in state_dict.items():
             assert v.device == torch.device("cpu"), "State_dict tensors should be on CPU when passed to load_weights."
-        
-        self.model.load_state_dict(state_dict) 
+
+        self.model.load_state_dict(state_dict)
         self.model.to(self.device) # Ensure model is on its designated device
         self.weights_loaded_count +=1
         self.logger.info(f"MockServer model device after load_weights: {next(self.model.parameters()).device}")
 
-    def offload_model_to_cpu(self): 
+    def offload_model_to_cpu(self):
         self.logger.info("MockServer offload_model_to_cpu called.")
         self.model.to(torch.device("cpu"))
         self.offload_called = True
@@ -108,11 +108,11 @@ def test_weight_sync_manager_load_weights_exception(caplog):
         def load_weights(self, state_dict: Dict[str, torch.Tensor]):
             raise RuntimeError("Simulated load_weights failure")
     inference_server_failing = ServerWithFailingLoadWeights()
-    
+
     did_yield = False
     with caplog.at_level(logging.ERROR):
         with weight_sync_manager(training_model, inference_server_failing):
-            did_yield = True 
+            did_yield = True
     assert did_yield, "weight_sync_manager should yield even if load_weights fails."
     assert "Error during weight synchronization" in caplog.text
     assert "Simulated load_weights failure" in caplog.text
@@ -121,15 +121,15 @@ def test_weight_sync_manager_load_weights_exception(caplog):
 def test_memory_cleanup_custom_offload():
     train_device = torch.device("cpu")
     server_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     training_model = SimpleTestModel().to(train_device)
     inference_server = MockEmbeddedInferenceServer("test-offload", 9998, server_device)
-    
+
     assert next(inference_server.model.parameters()).device == server_device
     assert not inference_server.offload_called
 
     with weight_sync_manager(training_model, inference_server):
-        pass 
+        pass
 
     assert inference_server.offload_called, "offload_model_to_cpu should have been called."
     assert next(inference_server.model.parameters()).device == torch.device("cpu"), \
@@ -137,13 +137,13 @@ def test_memory_cleanup_custom_offload():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available for GPU memory test.")
-@mock.patch('torch.cuda.empty_cache') 
+@mock.patch('torch.cuda.empty_cache')
 def test_memory_cleanup_cuda_empty_cache(mock_empty_cache):
     train_device = torch.device("cpu")
-    server_device = torch.device("cuda") 
+    server_device = torch.device("cuda")
 
     training_model = SimpleTestModel().to(train_device)
-    
+
     # Define a class with the exact name "EmbeddedInferenceServer" for the heuristic check
     # And ensure it does NOT have the custom offload method.
     class EmbeddedInferenceServer(nn.Module): # Making it an nn.Module to easily host a model
@@ -159,11 +159,11 @@ def test_memory_cleanup_cuda_empty_cache(mock_empty_cache):
         def load_weights(self, state_dict: Dict[str, torch.Tensor]):
             self.model.load_state_dict(state_dict)
             self.model.to(self.device)
-        
+
         # NO offload_model_to_cpu method here
 
     inference_server_cuda = EmbeddedInferenceServer("test-cuda-cleanup", 9997, server_device)
-    
+
     assert next(inference_server_cuda.model.parameters()).device == server_device
 
     with weight_sync_manager(training_model, inference_server_cuda):

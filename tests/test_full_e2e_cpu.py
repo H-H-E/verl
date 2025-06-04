@@ -24,26 +24,26 @@ if not LAUNCH_SCRIPT_PATH_E2E.exists(): # pragma: no cover
 # --- Mock Atropos API Server (for launch_atropos_verl.py to connect to) ---
 MOCK_ATROPOS_API_PORT_E2E = 8120 # Must match e2e_cpu_config.yaml
 
-@pytest.fixture(scope="function") 
+@pytest.fixture(scope="function")
 def mock_e2e_atropos_api():
     app = FastAPI()
-    
-    app.state.environments_registered = {} 
+
+    app.state.environments_registered = {}
     # Data for AtroposDataset. Note: prompt_token_lengths is added by dataset, not served here.
-    app.state.rollout_data_to_serve = [{ 
+    app.state.rollout_data_to_serve = [{
         "prompt": "TestP", "response": "TestR", "reward": 1.0, # Shortened for small max_seq_len
         "logprobs": [-1.0, -1.0, -1.0, -1.0, -1.0] # Length matching "TestR"
     }]
 
-    @app.get("/health") 
+    @app.get("/health")
     async def health():
         return {"status": "healthy_e2e_atropos_mock"}
 
-    @app.get("/environments") 
+    @app.get("/environments")
     async def get_environments():
         return {"environments": app.state.environments_registered}
 
-    @app.get("/batch") 
+    @app.get("/batch")
     async def get_batch(size: int):
         # Serve 'size' copies of the data. Trainer config uses batch_size=1.
         data_to_return = [app.state.rollout_data_to_serve[0] for _ in range(size)]
@@ -53,7 +53,7 @@ def mock_e2e_atropos_api():
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
-    
+
     # Wait for server to be ready by polling health endpoint
     health_url = f"http://localhost:{MOCK_ATROPOS_API_PORT_E2E}/health"
     server_ready = False
@@ -70,9 +70,9 @@ def mock_e2e_atropos_api():
         server.should_exit = True
         thread.join(timeout=1)
         pytest.skip(f"Mock E2E Atropos API server on port {MOCK_ATROPOS_API_PORT_E2E} did not become ready.")
-    
-    yield app 
-    
+
+    yield app
+
     server.should_exit = True
     thread.join(timeout=5)
 
@@ -83,14 +83,14 @@ def e2e_cpu_config_file(tmp_path_factory):
     config_content = {
         "model": "e2e-cpu-dummy-model",
         "environments": ["e2e_dummy_env"],
-        "rollout_server_port": MOCK_ATROPOS_API_PORT_E2E, 
-        "inference_api_port": 8121, 
+        "rollout_server_port": MOCK_ATROPOS_API_PORT_E2E,
+        "inference_api_port": 8121,
         "use_sglang": False,
         "lr": 1e-3, # Higher LR for dummy model to learn "something"
-        "num_iterations": 1, 
-        "batch_size": 1, 
+        "num_iterations": 1,
+        "batch_size": 1,
         "ppo_epochs": 1,
-        "max_seq_len": 16, 
+        "max_seq_len": 16,
         "clip_ratio": 0.2, "kl_coef": 0.0, "entropy_coef": 0.0, # Simplified loss for E2E
         "tensor_parallel": 1,
         "reference_model": None, # Ensure this is explicit
@@ -115,23 +115,23 @@ def e2e_dummy_env_script_directory():
 E2E_TEST_ENABLED = os.environ.get("RUN_E2E_TESTS", "false").lower() == "true"
 
 @pytest.mark.skipif(not E2E_TEST_ENABLED, reason="Full E2E test, skipped by default (set RUN_E2E_TESTS=true to enable).")
-@pytest.mark.e2e_test 
+@pytest.mark.e2e_test
 def test_full_loop_cpu(e2e_cpu_config_file: Path, mock_e2e_atropos_api, e2e_dummy_env_script_directory: Path, caplog):
-    caplog.set_level(logging.INFO) 
+    caplog.set_level(logging.INFO)
 
     # Configure the mock Atropos API to mark the dummy env as "registered"
     mock_e2e_atropos_api.state.environments_registered = {"e2e_dummy_env": {"status":"registered"}} # Match structure _is_env_registered checks
-    
+
     command = [
         sys.executable, str(LAUNCH_SCRIPT_PATH_E2E),
         "--config", str(e2e_cpu_config_file),
-        "--env-script-path", str(e2e_dummy_env_script_directory) 
+        "--env-script-path", str(e2e_dummy_env_script_directory)
     ]
 
-    timeout_seconds = 60 
+    timeout_seconds = 60
     stdout_data = ""
     stderr_data = ""
-    
+
     try:
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         stdout_data, stderr_data = process.communicate(timeout=timeout_seconds)
@@ -159,11 +159,11 @@ def test_full_loop_cpu(e2e_cpu_config_file: Path, mock_e2e_atropos_api, e2e_dumm
     assert "Initializing AtroposGrpoTrainer" in full_output
     assert "Attempting to fetch rollouts..." in full_output # From trainer
     assert "Successfully fetched batch." in full_output # From trainer
-    
+
     # This depends on compute_loss being implemented and trainer actually running.
     # If compute_loss is still dummy 0.0, this will be "Loss: 0.0"
-    assert "PPO Epoch 1/1, Loss:" in full_output 
-    
+    assert "PPO Epoch 1/1, Loss:" in full_output
+
     assert "Training finished successfully." in full_output # From launch script
     assert "Initiating cleanup of all started resources..." in full_output
     assert "Stopping environment server PID" in full_output # Check for environment server stop

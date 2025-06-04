@@ -8,7 +8,7 @@ This guide will help you get started with running on-policy Reinforcement Learni
     If you haven't already, clone your fork of the VeRL repository and navigate into its root directory.
     ```bash
     # git clone <your-fork-url>
-    # cd verl-repository-root 
+    # cd verl-repository-root
     ```
 
 2.  **Install Dependencies**:

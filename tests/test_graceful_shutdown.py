@@ -3,7 +3,7 @@ import pytest
 import subprocess
 import sys
 from pathlib import Path
-import yaml 
+import yaml
 import time
 import signal
 import psutil # For checking if processes are alive
@@ -29,17 +29,17 @@ def shutdown_test_config_file(tmp_path_factory):
         "model": "shutdown-test-dummy-model",
         "environments": ["shutdown_dummy_env"], # Corresponds to shutdown_dummy_env_server.py
         "rollout_server_port": 8130,
-        "inference_api_port": 8131, 
+        "inference_api_port": 8131,
         "use_sglang": False,
-        "lr": 1e-4, 
+        "lr": 1e-4,
         "num_iterations": 10, # Run enough iterations for sleep to be meaningful
-        "batch_size": 1,    
-        "ppo_epochs": 1,    
-        "max_seq_len": 16,   
+        "batch_size": 1,
+        "ppo_epochs": 1,
+        "max_seq_len": 16,
         "test_mode_iteration_sleep_s": 10, # Key for this test: sleep in trainer
-        "clip_ratio": 0.2, 
-        "kl_coef": 0.0, 
-        "entropy_coef": 0.01, 
+        "clip_ratio": 0.2,
+        "kl_coef": 0.0,
+        "entropy_coef": 0.01,
         "tensor_parallel": 1,
         "reference_model": None,
     }
@@ -64,7 +64,7 @@ def check_shutdown_dummy_env_script_exists():
 # This test is for the launch script's overall behavior and cleanup.
 
 @pytest.mark.skipif(not E2E_TEST_ENABLED_SD, reason="Graceful shutdown test is E2E, skipped by default (set RUN_E2E_TESTS=true).")
-@pytest.mark.e2e_test 
+@pytest.mark.e2e_test
 def test_ctrl_c_cleanup(shutdown_test_config_file: Path, caplog):
     caplog.set_level(logging.INFO)
     logger = logging.getLogger("TestCtrlCShutdown") # For test-specific logs
@@ -76,16 +76,16 @@ def test_ctrl_c_cleanup(shutdown_test_config_file: Path, caplog):
     ]
 
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
-    
+
     # Heuristic: Try to capture PIDs if logged by the main script.
     # This is for optional deeper check, primary check is logs and exit code.
     child_pids = set()
-    
+
     # Let the script run for a bit to start services and enter the trainer's sleep
     # Wait less than test_mode_iteration_sleep_s to interrupt during sleep.
     # Increased initial wait to allow all servers to potentially start and log PIDs.
     logger.info(f"Allowing launch script {process.pid} to run for ~12 seconds before sending SIGINT...")
-    time.sleep(12) 
+    time.sleep(12)
 
     # Check if main process is still running before sending signal
     if process.poll() is not None: # pragma: no cover
@@ -118,7 +118,7 @@ def test_ctrl_c_cleanup(shutdown_test_config_file: Path, caplog):
     assert "Signal SIGINT received. Starting graceful shutdown..." in full_output or \
            "KeyboardInterrupt received by main loop. Initiating graceful shutdown..." in full_output, \
            "Did not find SIGINT or KeyboardInterrupt handling message in logs."
-    
+
     # Check for specific cleanup messages from cleanup_resources()
     assert "Cleaning up GRPO trainer" in full_output
     assert "Stopping environment server PID" in full_output # Check for at least one env server stop msg

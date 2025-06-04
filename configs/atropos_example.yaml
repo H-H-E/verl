@@ -10,7 +10,7 @@ model: "hf-internal-testing/tiny-random-Llama-2" # TODO: Replace with your desir
 reference_model: null # Example: "NousResearch/Llama-2-7b-hf" or path to a local model
 
 # --- Environment Configuration ---
-# List of Atropos environments to run. These names should correspond to 
+# List of Atropos environments to run. These names should correspond to
 # environment server scripts (e.g., gsm8k_server.py for "gsm8k").
 # Ensure these environment server scripts are accessible.
 # The `launch_atropos_verl.py` script will look for them under the path specified
@@ -36,7 +36,7 @@ inference_api_port: 8001
 # will be used by default.
 # TODO: External vLLM server management by launch script is not fully implemented yet
 #       in the dummy ExternalInferenceWrapper. For now, use_sglang=false is more tested.
-use_sglang: false 
+use_sglang: false
 
 # --- Training Hyperparameters ---
 # These are standard PPO hyperparameters.

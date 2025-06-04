@@ -31,24 +31,24 @@ def _is_env_registered(atropos_api_url: str, env_name: str, timeout: float = 5.0
     '''
     environments_url = f"{atropos_api_url.rstrip('/')}/environments"
     logger_env.debug(f"Polling {environments_url} for registration of environment '{env_name}'.")
-    
+
     try:
         response = requests.get(environments_url, timeout=timeout)
-        response.raise_for_status() 
-        
+        response.raise_for_status()
+
         registered_envs_data = response.json()
         logger_env.debug(f"Received from /environments: {registered_envs_data}")
-        
+
         # Flexible checking for env_name and its "registered" status
         if isinstance(registered_envs_data, dict) and "environments" in registered_envs_data:
             envs = registered_envs_data["environments"]
-            if isinstance(envs, list): 
+            if isinstance(envs, list):
                 for entry in envs:
                     if isinstance(entry, dict) and entry.get("name") == env_name and entry.get("status", "").lower() == "registered":
                         return True
                     if isinstance(entry, str) and entry == env_name: # If it's just a list of names, presence implies registered
                         return True
-            elif isinstance(envs, dict): 
+            elif isinstance(envs, dict):
                 if envs.get(env_name, {}).get("status", "").lower() == "registered": # e.g. {"gsm8k": {"status": "registered"}}
                     return True
                 elif envs.get(env_name, "").lower() == "registered": # e.g. {"gsm8k": "registered"}
@@ -59,10 +59,10 @@ def _is_env_registered(atropos_api_url: str, env_name: str, timeout: float = 5.0
                      return True
                  if isinstance(entry, str) and entry == env_name:
                      return True
-        
+
         logger_env.debug(f"Environment '{env_name}' not found or not 'registered' in response: {registered_envs_data}")
         return False
-        
+
     except requests.exceptions.RequestException as e:
         logger_env.error(f"Error polling {environments_url} for '{env_name}': {e}")
         return False
@@ -70,9 +70,9 @@ def _is_env_registered(atropos_api_url: str, env_name: str, timeout: float = 5.0
 
 def start_env_server(
     env_name: str,
-    rollout_server_url: str, 
-    inference_url: str,      
-    env_script_path: str = "environments", 
+    rollout_server_url: str,
+    inference_url: str,
+    env_script_path: str = "environments",
     readiness_timeout: float = 60.0,
     poll_interval: float = 5.0,
     additional_env_args: Optional[Dict[str, Any]] = None
@@ -82,7 +82,7 @@ def start_env_server(
     Polls Atropos API's /environments for registration.
     '''
     log_file = LOGS_DIR_ENV / f"env_{env_name}.log"
-    
+
     script_executable_primary = Path(env_script_path) / f"{env_name}_server.py"
     script_executable_fallback = Path(env_script_path) / f"{env_name}.py"
 
@@ -97,7 +97,7 @@ def start_env_server(
     command = [
         "python", str(script_to_run), "serve",
         "--rollout_server_url", rollout_server_url,
-        "--openai.base_url", inference_url 
+        "--openai.base_url", inference_url
     ]
 
     if additional_env_args:
@@ -120,7 +120,7 @@ def start_env_server(
         while time.monotonic() - start_poll_time < readiness_timeout:
             if process.poll() is not None: # Check if process died
                 logger_env.error(f"Env server for '{env_name}' (PID: {process.pid}) terminated prematurely (code: {process.returncode}).")
-                break 
+                break
             if _is_env_registered(rollout_server_url, env_name):
                 is_registered = True
                 break
@@ -132,7 +132,7 @@ def start_env_server(
             return process
         else:
             logger_env.error(f"Env '{env_name}' failed to register within {readiness_timeout}s or process died.")
-            if process and process.poll() is None: 
+            if process and process.poll() is None:
                 if helpers_imported_env and 'generic_stop_server' in globals():
                     generic_stop_server(process, server_name=f"Env {env_name}")
                 else:
@@ -144,13 +144,13 @@ def start_env_server(
             # Popen's own cleanup usually handles its streams when the process ends or Popen object is GC'd.
             return None
 
-    except FileNotFoundError as fnf_error: 
+    except FileNotFoundError as fnf_error:
         logger_env.error(f"Failed to start env server for '{env_name}' (FileNotFound): {fnf_error}")
         if log_fp and not log_fp.closed: log_fp.close()
         if process and process.poll() is None: process.kill()
         if str(script_to_run) in str(fnf_error):
              raise FileNotFoundError(f"Env server script '{script_to_run}' not found.") from fnf_error
-        raise 
+        raise
     except Exception as e:
         logger_env.error(f"Unexpected error starting/registering env '{env_name}': {e}")
         if log_fp and not log_fp.closed: log_fp.close()
@@ -174,7 +174,7 @@ def stop_env_server(proc: Optional[subprocess.Popen], env_name: Optional[str] = 
     if proc.poll() is not None:
         logger_env.info(f"{server_display_name} (PID: {proc.pid}) already stopped.")
         return
-        
+
     logger_env.info(f"Stopping {server_display_name} (PID: {proc.pid})...")
 
     if helpers_imported_env and 'generic_stop_server' in globals():
@@ -186,7 +186,7 @@ def stop_env_server(proc: Optional[subprocess.Popen], env_name: Optional[str] = 
             except Exception as e: logger_env.error(f"Error closing log for {server_display_name}: {e}")
         try:
             proc.terminate()
-            proc.wait(timeout=10) 
+            proc.wait(timeout=10)
             logger_env.info(f"{server_display_name} (PID: {proc.pid}) terminated.")
         except subprocess.TimeoutExpired:
             logger_env.warning(f"{server_display_name} (PID: {proc.pid}) did not terminate. Sending SIGKILL...")

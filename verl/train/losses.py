@@ -35,7 +35,7 @@ def advantage_weighted_loss(
 
     # Calculate current log-probabilities for the taken actions
     # log_softmax along the vocabulary dimension (V)
-    log_probs_all_actions = F.log_softmax(curr_logits, dim=-1) 
+    log_probs_all_actions = F.log_softmax(curr_logits, dim=-1)
     # Gather the log-probabilities of the specific actions taken
     curr_logprobs = torch.gather(log_probs_all_actions, dim=-1, index=action_ids.unsqueeze(-1)).squeeze(-1)
 
@@ -47,14 +47,14 @@ def advantage_weighted_loss(
     # PPO Clipped Surrogate Objective
     surr1 = ratios * advantages
     surr2 = torch.clamp(ratios, 1.0 - clip_ratio, 1.0 + clip_ratio) * advantages
-    
+
     # The PPO loss is the negative of the objective function (we minimize loss)
     # Taking the element-wise minimum ensures a pessimistic bound.
     policy_loss_per_token = -torch.min(surr1, surr2)
 
     # Apply loss mask
     masked_policy_loss = policy_loss_per_token * loss_mask
-    
+
     # Normalize by the number of active (masked) tokens
     num_active_tokens = loss_mask.sum()
     if num_active_tokens > 0:
@@ -62,23 +62,23 @@ def advantage_weighted_loss(
     else:
         # Avoid division by zero if mask is all zeros (e.g., all prompt batch or empty batch)
         mean_policy_loss = torch.tensor(0.0, device=device, dtype=curr_logits.dtype)
-        
+
     # Entropy Bonus (optional)
     if entropy_coef > 0:
         # Calculate entropy of the current policy's action distribution
         probs_for_entropy = F.softmax(curr_logits, dim=-1)
         # Add a small epsilon to prevent log(0) for numerical stability, though log_softmax handles -inf
-        # log_probs_for_entropy = F.log_softmax(curr_logits, dim=-1) 
+        # log_probs_for_entropy = F.log_softmax(curr_logits, dim=-1)
         # However, if probs_for_entropy can be exactly 0, probs * log_probs can be NaN if log_probs is -inf.
         # So, it's safer to compute log_probs from probs with epsilon or use log_softmax output carefully.
         # PyTorch's Categorical distribution entropy uses: -sum(probs * log_probs)
         # Let's ensure log_probs are from log_softmax for stability.
         log_probs_for_entropy = F.log_softmax(curr_logits, dim=-1) # Re-use or ensure it's available
-        
+
         entropy_per_token = -torch.sum(probs_for_entropy * log_probs_for_entropy, dim=-1) # Sum over vocab dim
-        
+
         masked_entropy = entropy_per_token * loss_mask
-        
+
         if num_active_tokens > 0:
             mean_masked_entropy = masked_entropy.sum() / num_active_tokens
         else:
@@ -88,7 +88,7 @@ def advantage_weighted_loss(
 
     # Total loss
     total_loss = mean_policy_loss - (entropy_coef * mean_masked_entropy)
-            
+
     return total_loss
 
 # Placeholder for kl_penalty_loss (Task 2.4) - Now implementing it.
@@ -125,7 +125,7 @@ def kl_penalty_loss(
     # KL divergence D_KL(P || Q) = sum P(x) * (log P(x) - log Q(x))
     # Here, P is current policy, Q is reference policy.
     kl_div_per_element = curr_probs * (curr_log_probs - ref_log_probs)
-    
+
     # Sum over the vocabulary dimension (V) to get KL divergence per token position
     kl_div_per_token = torch.sum(kl_div_per_element, dim=-1)
 
@@ -133,5 +133,5 @@ def kl_penalty_loss(
     # This assumes KL penalty is applied to all tokens, including prompt/padding.
     # If a mask is needed, it should be passed as an argument.
     mean_kl_div = kl_div_per_token.mean()
-            
+
     return mean_kl_div

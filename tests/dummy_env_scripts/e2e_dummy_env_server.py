@@ -11,19 +11,19 @@ def main():
     # Use a more robust way to handle arguments with dots or that might be optional
     parser.add_argument("--openai.base_url", type=str, dest="openai_base_url", help="URL of the OpenAI-compatible inference API")
     parser.add_argument("--some_other_arg", type=str, default="default_val", help="Another dummy arg")
-    
+
     args = parser.parse_args()
-    
+
     # Use a unique identifier for this server instance for logging if multiple are run
     # pid = os.getpid() # Not strictly needed for this dummy version
-    
+
     print(f"E2E Dummy Environment Server ({sys.argv[0]}) started. Action: {args.action}", flush=True)
     print(f"Received --rollout_server_url: {args.rollout_server_url}", flush=True)
     print(f"Received --openai.base_url: {args.openai_base_url}", flush=True)
     print(f"Received --some_other_arg: {args.some_other_arg}", flush=True)
-    
+
     print("E2E Dummy Environment Server running and ready to simulate work...", flush=True)
-    
+
     # The launch script will manage termination via SIGTERM/SIGINT.
     # This loop simulates a server staying alive.
     try:

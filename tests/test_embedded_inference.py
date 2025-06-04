@@ -30,14 +30,14 @@ def is_port_in_use(port: int, host: str = "localhost") -> bool:
 def test_port_embedded():
     # Using a fixed port for simplicity in this example.
     # For parallel tests, dynamic port allocation would be better.
-    return 8070 
+    return 8070
 
 @pytest.fixture(scope="function")
 def embedded_server(test_port_embedded: int):
     '''Fixture to create, start, and stop an EmbeddedInferenceServer instance.'''
-    
-    model_name = "dummy-embedded-model" 
-    
+
+    model_name = "dummy-embedded-model"
+
     if is_port_in_use(test_port_embedded):
         # If port is in use, attempt to manually connect to see if it's a leftover server.
         # This is just for debugging, pytest.skip is the main action.
@@ -51,7 +51,7 @@ def embedded_server(test_port_embedded: int):
     device = torch.device("cpu") # Use CPU for these tests
 
     server = EmbeddedInferenceServer(model_name=model_name, port=test_port_embedded, device=device)
-    
+
     server_ready = False
     try:
         server.start()
@@ -61,9 +61,9 @@ def embedded_server(test_port_embedded: int):
         # Fallback to /v1/models if /health check wasn't enough or to be sure
         if not server_ready and is_server_ready(f"http://localhost:{test_port_embedded}/v1/models", timeout=15.0, poll_interval=0.5):
             server_ready = True
-        
+
         assert server_ready, f"Embedded server did not become ready on port {test_port_embedded}."
-        yield server 
+        yield server
     finally:
         server.stop()
         # Wait a moment for the OS to release the port
@@ -78,16 +78,16 @@ def embedded_server(test_port_embedded: int):
 
 def test_start_and_respond(embedded_server: EmbeddedInferenceServer, test_port_embedded: int):
     '''
-    Tests starting the EmbeddedInferenceServer, polling /v1/models, 
+    Tests starting the EmbeddedInferenceServer, polling /v1/models,
     sending a request to /v1/chat/completions, and checking the response.
     '''
     # Server is started and readiness checked by the fixture.
-    
+
     # 1. Check /v1/models endpoint
     models_url = f"http://localhost:{test_port_embedded}/v1/models"
     try:
         response = requests.get(models_url, timeout=5)
-        response.raise_for_status() 
+        response.raise_for_status()
         models_data = response.json()
         assert "data" in models_data
         assert len(models_data["data"]) > 0
@@ -103,7 +103,7 @@ def test_start_and_respond(embedded_server: EmbeddedInferenceServer, test_port_e
             {"role": "user", "content": "Hello, world!"}
         ]
     }
-    
+
     try:
         response = requests.post(chat_url, json=chat_payload, timeout=5)
         response.raise_for_status()
@@ -115,7 +115,7 @@ def test_start_and_respond(embedded_server: EmbeddedInferenceServer, test_port_e
         assert "message" in choice
         assert choice["message"]["role"] == "assistant"
         assert "content" in choice["message"]
-        assert len(choice["message"]["content"]) > 0 
+        assert len(choice["message"]["content"]) > 0
         assert f"Generated text for 'Hello, world!' by {embedded_server.model_name}" in choice["message"]["content"]
         assert "created" in chat_response_data # Check for timestamp
         assert isinstance(chat_response_data["created"], int)
@@ -132,11 +132,11 @@ def test_load_weights_on_embedded_server(embedded_server: EmbeddedInferenceServe
     new_state_dict = embedded_server.model.state_dict()
     # Modify a parameter
     with torch.no_grad(): # Ensure no gradient tracking during modification
-        new_state_dict['dummy_param'] = torch.randn_like(original_param_value) 
+        new_state_dict['dummy_param'] = torch.randn_like(original_param_value)
         # Ensure it's different
         while torch.equal(new_state_dict['dummy_param'], original_param_value):
             new_state_dict['dummy_param'] = torch.randn_like(original_param_value)
-    
+
     modified_param_value = new_state_dict['dummy_param'].clone()
 
     # Load the new state_dict

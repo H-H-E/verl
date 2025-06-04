@@ -13,9 +13,9 @@ import subprocess # For Popen type hint
 try:
     from verl.atropos_config import AtroposConfig, load_atropos_config
     from verl.atropos_inference import (
-        start_vllm_server, 
-        start_sglang_server, 
-        stop_server as stop_external_server, 
+        start_vllm_server,
+        start_sglang_server,
+        stop_server as stop_external_server,
         is_server_ready,
         EmbeddedInferenceServer
     )
@@ -26,15 +26,15 @@ except ImportError as e: # pragma: no cover
     current_dir = Path(__file__).resolve().parent
     # Assuming this script is at recipe/atropos/launch_atropos_verl.py
     # Then verl_root would be current_dir.parent.parent
-    verl_root = current_dir.parent.parent 
+    verl_root = current_dir.parent.parent
     if str(verl_root) not in sys.path:
         sys.path.insert(0, str(verl_root))
-    
+
     # Retry imports
     from verl.atropos_config import AtroposConfig, load_atropos_config
     from verl.atropos_inference import (
-        start_vllm_server, start_sglang_server, 
-        stop_server as stop_external_server, 
+        start_vllm_server, start_sglang_server,
+        stop_server as stop_external_server,
         is_server_ready, EmbeddedInferenceServer
     )
     from verl.atropos_api_launcher import start_atropos_api, stop_atropos_api
@@ -63,7 +63,7 @@ grpo_trainer_instance: Optional[AtroposGrpoTrainer] = None
 
 def cleanup_resources():
     logger.info("Initiating cleanup of all started resources...")
-    
+
     # Trainer cleanup should be called first as it might manage its own inference server.
     global grpo_trainer_instance
     if grpo_trainer_instance and hasattr(grpo_trainer_instance, 'cleanup'):
@@ -72,7 +72,7 @@ def cleanup_resources():
             grpo_trainer_instance.cleanup()
         except Exception as e: # pragma: no cover
             logger.error(f"Error during GRPO trainer cleanup: {e}", exc_info=True)
-    
+
     # If this script specifically started an external inference server (not via trainer), stop it.
     # Currently, trainer's __init__ handles inference server startup.
     # global external_inference_proc # This would be used if launch script started it directly
@@ -92,7 +92,7 @@ def cleanup_resources():
             env_name_for_log = f"PID {proc.pid}" # Actual env_name not stored here, use PID
             logger.info(f"Stopping environment server {env_name_for_log}...")
             try:
-                stop_env_server(proc, env_name=env_name_for_log) 
+                stop_env_server(proc, env_name=env_name_for_log)
             except Exception as e: # pragma: no cover
                 logger.error(f"Error stopping environment server {env_name_for_log}: {e}", exc_info=True)
         env_server_procs = []
@@ -106,7 +106,7 @@ def cleanup_resources():
         except Exception as e: # pragma: no cover
             logger.error(f"Error stopping Atropos API server: {e}", exc_info=True)
         atropos_api_proc = None
-        
+
     logger.info("Cleanup finished.")
 
 def signal_handler(sig, frame): # pragma: no cover
@@ -117,9 +117,9 @@ def signal_handler(sig, frame): # pragma: no cover
 def main():
     parser = argparse.ArgumentParser(description="Launch script for Atropos-VeRL GRPO training.")
     parser.add_argument(
-        "--config", 
-        type=str, 
-        required=True, 
+        "--config",
+        type=str,
+        required=True,
         help="Path to the YAML configuration file for AtroposConfig."
     )
     parser.add_argument(
@@ -135,10 +135,10 @@ def main():
     )
 
     args = parser.parse_args()
-    
+
     # Register signal handlers
-    signal.signal(signal.SIGINT, signal_handler)  
-    signal.signal(signal.SIGTERM, signal_handler) 
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     # Make global variables accessible for assignment
     global atropos_api_proc, env_server_procs, grpo_trainer_instance
@@ -181,14 +181,14 @@ def main():
             logger.info(f"Starting Atropos API server on port {config.rollout_server_port}...")
             atropos_api_proc = start_atropos_api(port=config.rollout_server_port, host="localhost") # Assume localhost for now
             if atropos_api_proc is None:
-                raise RuntimeError("Atropos API server failed to start.") 
+                raise RuntimeError("Atropos API server failed to start.")
             logger.info(f"Atropos API server started successfully (PID: {atropos_api_proc.pid}).")
 
             if not config.environments: # pragma: no cover
                 logger.warning("No environments specified in config. Skipping environment server startup.")
             else:
                 logger.info(f"Starting {len(config.environments)} environment server(s) from path '{args.env_script_path}'...")
-                atropos_api_url = f"http://localhost:{config.rollout_server_port}" 
+                atropos_api_url = f"http://localhost:{config.rollout_server_port}"
                 inference_service_url = f"http://localhost:{config.inference_api_port}/v1"
 
                 for env_name in config.environments:
@@ -197,22 +197,22 @@ def main():
                         env_name=env_name,
                         rollout_server_url=atropos_api_url,
                         inference_url=inference_service_url,
-                        env_script_path=args.env_script_path 
+                        env_script_path=args.env_script_path
                     )
                     if env_proc is None: # start_env_server handles registration polling and returns None on failure
                         raise RuntimeError(f"Environment server '{env_name}' failed to start or register.")
                     env_server_procs.append(env_proc)
                     # Log message from start_env_server already confirms registration or failure.
-                    logger.info(f"Environment server '{env_name}' initiated (PID: {env_proc.pid}).") 
-            
+                    logger.info(f"Environment server '{env_name}' initiated (PID: {env_proc.pid}).")
+
             if config.environments: logger.info("All specified environment servers initiated.")
 
             logger.info("Instantiating AtroposGrpoTrainer...")
             grpo_trainer_instance = AtroposGrpoTrainer(config)
-            
+
             logger.info(f"Starting trainer.train(num_iterations={config.num_iterations})...")
             grpo_trainer_instance.train(num_iterations=config.num_iterations)
-            
+
             logger.info("Training finished successfully.")
 
         except KeyboardInterrupt: # pragma: no cover

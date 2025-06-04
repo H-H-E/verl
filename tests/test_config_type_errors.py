@@ -65,7 +65,7 @@ def test_invalid_yaml_format(tmp_path: Path):
     config_file = tmp_path / "invalid.yaml"
     with open(config_file, 'w') as f:
         f.write("model: dummy-model\nenvironments: [gsm8k") # Malformed YAML (missing closing bracket)
-    
+
     with pytest.raises(ValueError, match="Error parsing YAML file"):
         load_atropos_config(config_file)
 

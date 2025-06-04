@@ -42,7 +42,7 @@ jobs:
     # needs: [CI] # Optionally, make it dependent on the main CI job
     strategy:
       matrix:
-        python-version: ["3.10"] 
+        python-version: ["3.10"]
 
     steps:
     - uses: actions/checkout@v3
@@ -58,7 +58,7 @@ jobs:
         # For now, assume general dependencies are in requirements.txt and CUDA specific ones might need to be added or are included there.
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
         if [ -f dev-requirements.txt ]; then pip install -r dev-requirements.txt; fi
-        pip install -r requirements.txt 
+        pip install -r requirements.txt
         pip install pytest torch # Ensure torch is installed
     - name: Run CUDA availability smoke test
       run: |

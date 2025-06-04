@@ -10,16 +10,16 @@ def main():
     parser.add_argument("--rollout_server_url", type=str, help="URL of the Atropos API server")
     # Use dest to handle argument names with dots if they come from Atropos
     parser.add_argument("--openai.base_url", type=str, dest="openai_base_url", help="URL of the OpenAI-compatible inference API")
-    
+
     args = parser.parse_args()
-    
+
     print(f"Shutdown Dummy Environment Server ({Path(__file__).name}) started. PID: {os.getpid()}", flush=True)
     print(f"Action: {args.action}", flush=True)
     print(f"Rollout Server URL: {args.rollout_server_url}", flush=True)
     print(f"Inference API URL: {args.openai_base_url}", flush=True)
-    
+
     print("Shutdown Dummy Environment Server running and simulating work...", flush=True)
-    
+
     try:
         # Loop indefinitely, simulating a server process that needs to be killed.
         # The launch script is responsible for terminating this process.

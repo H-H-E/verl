@@ -4,7 +4,7 @@ import pytest
 
 # Define the tools to check
 # Ruff handles black, isort, flake8
-TOOLS = ["ruff", "mypy"] 
+TOOLS = ["ruff", "mypy"]
 
 @pytest.mark.parametrize("tool", TOOLS)
 def test_tool_is_installed_and_runnable(tool):

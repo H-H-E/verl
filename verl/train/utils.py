@@ -38,7 +38,7 @@ def build_loss_mask(input_ids: torch.Tensor, prompt_end_positions: List[int]) ->
 
     for i in range(batch_size):
         end_pos = prompt_end_positions[i]
-        
+
         if not isinstance(end_pos, int):
             raise TypeError(f"Elements of prompt_end_positions must be integers. Found {type(end_pos)} at index {i}.")
 
@@ -46,15 +46,15 @@ def build_loss_mask(input_ids: torch.Tensor, prompt_end_positions: List[int]) ->
         # So, if end_pos == 0, all tokens are response tokens.
         # If end_pos == seq_length, all tokens are prompt tokens (mask remains all zeros).
         # If end_pos > seq_length, it's an error.
-        if not (0 <= end_pos <= seq_length): 
+        if not (0 <= end_pos <= seq_length):
             raise ValueError(
                 f"prompt_end_positions[{i}] is {end_pos}, which is out of range [0, {seq_length}]. "
                 f"It should be the index of the first response token."
             )
-        
+
         if end_pos < seq_length: # If end_pos == seq_length, means no response tokens, mask is all 0.
             loss_mask[i, end_pos:] = 1.0
-            
+
     return loss_mask
 
 # Placeholder for weight_sync_manager (Task 3.1)
@@ -62,19 +62,19 @@ def build_loss_mask(input_ids: torch.Tensor, prompt_end_positions: List[int]) ->
 def weight_sync_manager(training_model: nn.Module, inference_server: Any) -> Generator[None, None, None]:
     """
     A context manager to synchronize weights from a training model to an inference server.
-    
+
     1. Extracts state_dict from `training_model` (cloned to CPU).
     2. Calls `inference_server.load_weights(state_dict)`. The server is expected to handle
        moving weights to its own device.
     3. Yields control to the `with` block.
-    4. After the `with` block, optionally attempts to free GPU memory if the 
+    4. After the `with` block, optionally attempts to free GPU memory if the
        `inference_server` is an embedded type and holds its model on GPU. This might involve
        moving the model to CPU or clearing CUDA cache.
 
     Args:
         training_model (nn.Module): The model from which to get weights.
         inference_server (Any): The inference server object. Must have a `load_weights` method.
-                                May have a `model` attribute and a custom `offload_model_to_cpu` 
+                                May have a `model` attribute and a custom `offload_model_to_cpu`
                                 or similar method for memory management.
     """
     # original_inference_model_device = None # Not used in current simplified logic
@@ -91,7 +91,7 @@ def weight_sync_manager(training_model: nn.Module, inference_server: Any) -> Gen
         logger_utils.debug("Extracting state_dict from training_model (cloning to CPU)...")
         # Clone to CPU to avoid issues if inference_server is on a different device or needs CPU weights
         state_dict_cpu = {k: v.cpu().clone().detach() for k, v in training_model.state_dict().items()}
-        
+
         logger_utils.debug("Calling inference_server.load_weights()...")
         inference_server.load_weights(state_dict_cpu)
         logger_utils.info("Weights loaded into inference server.")
@@ -101,16 +101,16 @@ def weight_sync_manager(training_model: nn.Module, inference_server: Any) -> Gen
         # Depending on policy, might re-raise or just yield.
         # For now, log and yield. If sync is critical, an error should be raised.
         # raise # Example: if sync must succeed.
-    
+
     try:
         yield # Control is passed to the 'with' block here
     finally:
         logger_utils.info("Exiting weight_sync_manager, performing cleanup...")
-        
+
         # Optional: Free inference_server GPU memory if it's an embedded server holding a model on GPU.
         is_embedded_by_name = type(inference_server).__name__ == 'EmbeddedInferenceServer' # Heuristic
         has_model_attribute = hasattr(inference_server, 'model') and isinstance(inference_server.model, nn.Module)
-        
+
         if is_embedded_by_name and has_model_attribute:
             logger_utils.debug("Attempting to manage memory for embedded inference server.")
             if hasattr(inference_server, 'offload_model_to_cpu') and callable(inference_server.offload_model_to_cpu):
@@ -136,7 +136,7 @@ def weight_sync_manager(training_model: nn.Module, inference_server: Any) -> Gen
                     logger_utils.error(f"Error during optional memory management for embedded server: {e_mem}", exc_info=True)
         else:
             logger_utils.debug("Inference server not identified as embedded with model for specific memory management.")
-        
+
         logger_utils.info("weight_sync_manager cleanup finished.")
 
 
@@ -152,7 +152,7 @@ def assert_gpu_memory_freed(threshold_bytes: int = 1000000, device_id: Optional[
                                Defaults to 1,000,000 bytes (1MB).
         device_id (Optional[int]): The GPU device ID to check. If None, checks the
                                    current CUDA device.
-    
+
     Raises:
         RuntimeError: If allocated GPU memory exceeds threshold_bytes.
         AssertionError: If CUDA is not available (can be caught by test skipper).
@@ -162,7 +162,7 @@ def assert_gpu_memory_freed(threshold_bytes: int = 1000000, device_id: Optional[
         logger_utils.warning("CUDA not available. assert_gpu_memory_freed check skipped.")
         # Tests using this should ideally be skipped if CUDA is not available.
         # If called directly in such an environment, it will effectively do nothing.
-        return 
+        return
 
     if device_id is None:
         try:
@@ -178,7 +178,7 @@ def assert_gpu_memory_freed(threshold_bytes: int = 1000000, device_id: Optional[
         except Exception as e: # Handles invalid device_id or other CUDA errors
             logger_utils.error(f"Could not get allocated memory for device {device_id}: {e}")
             raise RuntimeError(f"Failed to get allocated memory for device {device_id}: {e}") from e
-            
+
     logger_utils.debug(f"Currently allocated GPU memory on {device_str}: {allocated_memory} bytes.")
 
     if allocated_memory > threshold_bytes:

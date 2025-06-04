@@ -12,7 +12,7 @@ def test_identical_logits():
     ref_logits = curr_logits.clone() # .detach() is handled inside the function for ref_logits if needed
 
     kl_loss = kl_penalty_loss(curr_logits, ref_logits)
-    
+
     # KL divergence between identical distributions should be 0
     assert torch.isclose(kl_loss, torch.tensor(0.0, device=device, dtype=torch.float32), atol=1e-6), \
         f"KL loss should be near zero for identical logits, but got {kl_loss.item()}"
@@ -29,7 +29,7 @@ def test_shifted_logits_produces_nonzero_kl():
     curr_logits_shifted[..., shift_index] += 5.0 # Make a significant shift
 
     kl_loss = kl_penalty_loss(curr_logits_shifted, ref_logits)
-    
+
     # KL divergence should be positive for different distributions
     assert kl_loss.item() > 0, \
         f"KL loss should be positive for different logits, but got {kl_loss.item()}"
@@ -53,11 +53,11 @@ def test_kl_divergence_value_simple_case():
     # Expected KL(P_curr || P_ref) = P_curr(0)*log(P_curr(0)/P_ref(0)) + P_curr(1)*log(P_curr(1)/P_ref(1))
     # P_curr(0)=0.1, P_ref(0)=0.5
     # P_curr(1)=0.9, P_ref(1)=0.5
-    expected_kl = (0.1 * torch.log(torch.tensor(0.1/0.5, device=device)) + 
+    expected_kl = (0.1 * torch.log(torch.tensor(0.1/0.5, device=device)) +
                    0.9 * torch.log(torch.tensor(0.9/0.5, device=device)))
-    
+
     kl_loss = kl_penalty_loss(curr_logits, ref_logits)
-    
+
     assert torch.isclose(kl_loss, expected_kl, atol=1e-5), \
         f"Expected KL {expected_kl.item()}, but got {kl_loss.item()}"
 
@@ -65,12 +65,12 @@ def test_kl_shape_mismatch():
     B, T, V = 2, 5, 10
     device = "cpu"
     curr_logits = torch.randn(B, T, V, device=device, dtype=torch.float32)
-    
+
     # Wrong vocabulary size
     ref_logits_wrong_shape_v = torch.randn(B, T, V + 1, device=device, dtype=torch.float32)
     with pytest.raises(ValueError, match="must match ref_logits shape"):
         kl_penalty_loss(curr_logits, ref_logits_wrong_shape_v)
-        
+
     # Wrong sequence length
     ref_logits_wrong_shape_t = torch.randn(B, T - 1, V, device=device, dtype=torch.float32)
     with pytest.raises(ValueError, match="must match ref_logits shape"):
@@ -87,16 +87,16 @@ def test_kl_loss_requires_grad_curr_logits():
     device = "cpu"
     curr_logits = torch.randn(B,T,V, device=device, dtype=torch.float32, requires_grad=True)
     # ref_logits should not require grad, or if they do, they will be detached inside kl_penalty_loss
-    ref_logits_no_grad = torch.randn(B,T,V, device=device, dtype=torch.float32) 
-    
+    ref_logits_no_grad = torch.randn(B,T,V, device=device, dtype=torch.float32)
+
     kl_loss = kl_penalty_loss(curr_logits, ref_logits_no_grad)
-    
+
     assert kl_loss.requires_grad, "KL loss should require gradients wrt curr_logits."
-    
+
     # Test if gradient actually flows to curr_logits
     # Need to make sure kl_loss is not zero, otherwise grad might be None or zero.
     # If curr_logits and ref_logits_no_grad are different (which they are by randn), kl_loss > 0.
-    
+
     try:
         kl_loss.backward()
         assert curr_logits.grad is not None, "curr_logits should have gradients after backward() call."
@@ -110,12 +110,12 @@ def test_kl_loss_ref_logits_grad_detached():
     device = "cpu"
     curr_logits = torch.randn(B,T,V, device=device, dtype=torch.float32, requires_grad=True)
     # ref_logits created with requires_grad=True to test if it's properly detached
-    ref_logits_with_grad = torch.randn(B,T,V, device=device, dtype=torch.float32, requires_grad=True) 
-    
+    ref_logits_with_grad = torch.randn(B,T,V, device=device, dtype=torch.float32, requires_grad=True)
+
     kl_loss = kl_penalty_loss(curr_logits, ref_logits_with_grad)
-    
+
     assert kl_loss.requires_grad, "KL loss should require gradients wrt curr_logits."
-    
+
     try:
         kl_loss.backward()
         assert curr_logits.grad is not None, "curr_logits should have gradients."
@@ -127,15 +127,15 @@ def test_kl_loss_ref_logits_grad_detached():
 def test_kl_loss_on_gpu():
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available, skipping GPU test for kl_penalty_loss")
-    
+
     device = torch.device("cuda")
     B, T, V = 2, 5, 10
-    
+
     curr_logits = torch.randn(B, T, V, device=device, dtype=torch.float32)
     ref_logits = curr_logits.clone()
-    
+
     kl_loss = kl_penalty_loss(curr_logits, ref_logits)
-    
+
     assert kl_loss.device == device, "Output tensor should be on the same device as input."
     assert torch.isclose(kl_loss, torch.tensor(0.0, device=device, dtype=torch.float32), atol=1e-6)
 

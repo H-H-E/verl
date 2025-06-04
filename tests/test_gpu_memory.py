@@ -1,7 +1,7 @@
 # tests/test_gpu_memory.py
 import pytest
 import torch
-from verl.train.utils import assert_gpu_memory_freed 
+from verl.train.utils import assert_gpu_memory_freed
 import logging # For checking logs in some cases
 import time # For potential small delays if needed, though not strictly in this version
 
@@ -25,7 +25,7 @@ def test_memory_freed_passes_when_low_allocation():
         c = b + a
         del a, b, c
         torch.cuda.empty_cache()
-        
+
         # After clearing, memory should be at or very near the baseline.
         # We use a threshold that is baseline + a small buffer, or a fixed reasonable threshold
         # if baseline itself can vary slightly across environments.
@@ -34,7 +34,7 @@ def test_memory_freed_passes_when_low_allocation():
         # For simplicity, if the function default (1MB) is used, it should pass if baseline is low.
         # We will use a larger threshold here as specified in the original task (10MB) for this test.
         threshold_for_pass = 10 * 1024 * 1024 # 10MB
-        
+
         # If baseline itself is already > threshold_for_pass, this test is ill-defined.
         # However, assert_gpu_memory_freed checks current total, not relative.
         # This test essentially checks if current total is < 10MB after operations.
@@ -59,10 +59,10 @@ def test_memory_not_freed_raises_runtimeerror():
         # current_allocated_before_tensor = torch.cuda.memory_allocated()
 
         # Allocate a noticeable tensor, e.g., 20MB of floats (20 * 1024 * 1024 / 4 elements)
-        num_elements = (20 * 1024 * 1024) // 4 
-        large_tensor_for_test = torch.randn(num_elements, device="cuda") 
+        num_elements = (20 * 1024 * 1024) // 4
+        large_tensor_for_test = torch.randn(num_elements, device="cuda")
         # Perform an operation to ensure it's "used"
-        _ = large_tensor_for_test * 2 
+        _ = large_tensor_for_test * 2
 
         # Now, memory allocated should be at least 20MB + whatever was there before.
         # Set a threshold that is definitely lower than this (e.g., 1MB, the function's default).
@@ -73,9 +73,9 @@ def test_memory_not_freed_raises_runtimeerror():
         assert current_total_allocated > threshold_to_fail, \
             f"Test setup issue: Current total allocated ({current_total_allocated}) is not greater than threshold ({threshold_to_fail}). Tensor might not have allocated as expected."
 
-        with pytest.raises(RuntimeError, match="GPU memory allocated on"): 
+        with pytest.raises(RuntimeError, match="GPU memory allocated on"):
             assert_gpu_memory_freed(threshold_bytes=threshold_to_fail)
-            
+
     finally:
         # Cleanup the tensor to free memory for other tests
         if large_tensor_for_test is not None:
@@ -89,8 +89,8 @@ def test_assert_gpu_memory_freed_no_cuda(caplog):
     Tests that assert_gpu_memory_freed logs a warning if CUDA is not available.
     """
     with caplog.at_level(logging.WARNING):
-        assert_gpu_memory_freed(threshold_bytes=100) 
-    
+        assert_gpu_memory_freed(threshold_bytes=100)
+
     assert "CUDA not available. assert_gpu_memory_freed check skipped." in caplog.text
 
 
@@ -99,10 +99,10 @@ def test_assert_gpu_memory_freed_specific_device():
     """Tests assert_gpu_memory_freed with a specific device ID."""
     # This test assumes a multi-GPU environment to be fully meaningful for testing different device_ids,
     # but will run on device 0 if only one GPU is present.
-    device_id_to_test = 0 
+    device_id_to_test = 0
     try:
         # Test on device 0 (or the current default if only one GPU)
-        torch.cuda.empty_cache(device=device_id_to_test) 
+        torch.cuda.empty_cache(device=device_id_to_test)
         assert_gpu_memory_freed(threshold_bytes=20 * 1024 * 1024, device_id=device_id_to_test) # Generous 20MB threshold for existing allocations
     except RuntimeError as e: # pragma: no cover
         # This might fail if device 0 has persistent allocations beyond the threshold.
@@ -113,7 +113,7 @@ def test_assert_gpu_memory_freed_specific_device():
     # Or if we can guarantee an invalid ID.
     num_gpus = torch.cuda.device_count()
     invalid_device_id = num_gpus # device IDs are 0-indexed, so num_gpus is always an invalid ID.
-    
+
     if num_gpus >= 1 : # Only proceed if we can construct a definitively invalid ID relative to actual count
         with pytest.raises(RuntimeError, match=f"Failed to get allocated memory for device {invalid_device_id}"):
             assert_gpu_memory_freed(threshold_bytes=100, device_id=invalid_device_id)

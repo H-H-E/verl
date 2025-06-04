@@ -2,11 +2,11 @@
 import subprocess
 import time
 import os
-import signal 
-import logging 
-from pathlib import Path 
-from typing import Optional, List, Dict, Any 
-import requests 
+import signal
+import logging
+from pathlib import Path
+from typing import Optional, List, Dict, Any
+import requests
 import threading # For running Uvicorn in a separate thread
 import uvicorn # For serving FastAPI app
 from fastapi import FastAPI, Request # Add FastAPI and Request
@@ -37,19 +37,19 @@ def start_vllm_server(model_name: str, port: int, tensor_parallel: int, host: st
     logger.info(f"Starting vLLM server for model '{model_name}' on port {port} with TP={tensor_parallel}.")
     logger.info(f"Command: {' '.join(command)}")
     logger.info(f"vLLM server logs will be saved to: {vllm_log_file}")
-    log_fp = None 
+    log_fp = None
     try:
         log_fp = open(vllm_log_file, 'w')
         proc = subprocess.Popen(command, stdout=log_fp, stderr=subprocess.STDOUT)
         logger.info(f"vLLM server process started with PID: {proc.pid}.")
     except FileNotFoundError:
         logger.error("vLLM command not found. Ensure vLLM is installed and in PATH.")
-        if log_fp: 
-             log_fp.close() 
+        if log_fp:
+             log_fp.close()
         raise
     except Exception as e:
         logger.error(f"Failed to start vLLM server: {e}")
-        if log_fp: 
+        if log_fp:
              log_fp.close()
         raise
     return proc
@@ -71,21 +71,21 @@ def stop_server(proc: subprocess.Popen, server_name: str = "Server") -> None:
         except Exception as e:
             logger.error(f"Error closing log file for {server_name} (PID: {proc.pid}): {e}")
     try:
-        proc.terminate() 
+        proc.terminate()
         logger.info(f"Sent SIGTERM to {server_name} (PID: {proc.pid}). Waiting for termination...")
     except ProcessLookupError:
         logger.warning(f"{server_name} (PID: {proc.pid}) not found. Already terminated?")
-        return 
+        return
     except Exception as e:
         logger.error(f"Error sending SIGTERM to {server_name} (PID: {proc.pid}): {e}")
     try:
-        proc.wait(timeout=5) 
+        proc.wait(timeout=5)
         logger.info(f"{server_name} (PID: {proc.pid}) terminated gracefully.")
     except subprocess.TimeoutExpired:
         logger.warning(f"{server_name} (PID: {proc.pid}) did not terminate after 5s. Sending SIGKILL...")
         try:
-            proc.kill() 
-            proc.wait(timeout=5) 
+            proc.kill()
+            proc.wait(timeout=5)
             logger.info(f"{server_name} (PID: {proc.pid}) killed.")
         except ProcessLookupError:
              logger.warning(f"{server_name} (PID: {proc.pid}) not found during SIGKILL. Already terminated?")
@@ -100,7 +100,7 @@ def start_sglang_server(
     port: int,
     host: str = "localhost",
     log_level: str = "info",
-    tensor_parallel_size: int = 1, 
+    tensor_parallel_size: int = 1,
     additional_args: Optional[Dict[str, Any]] = None
 ) -> subprocess.Popen:
     '''
@@ -110,11 +110,11 @@ def start_sglang_server(
     sglang_log_file = LOGS_DIR / f"sglang_server_{port}.log"
     command = [
         "python", "-m", "sglang.launch_server",
-        "--model-path", model_name, 
+        "--model-path", model_name,
         "--port", str(port),
         "--host", host,
         "--log-level", log_level,
-        "--tp-size", str(tensor_parallel_size) 
+        "--tp-size", str(tensor_parallel_size)
     ]
     if additional_args:
         for key, value in additional_args.items():
@@ -123,19 +123,19 @@ def start_sglang_server(
     logger.info(f"Starting SGLang server for model '{model_name}' on port {port} with TP={tensor_parallel_size}.")
     logger.info(f"Command: {' '.join(command)}")
     logger.info(f"SGLang server logs will be saved to: {sglang_log_file}")
-    log_fp = None 
+    log_fp = None
     try:
         log_fp = open(sglang_log_file, 'w')
         proc = subprocess.Popen(command, stdout=log_fp, stderr=subprocess.STDOUT)
         logger.info(f"SGLang server process started with PID: {proc.pid}.")
     except FileNotFoundError:
         logger.error("Failed to start SGLang server: 'python' command not found or sglang not installed correctly.")
-        if log_fp: 
+        if log_fp:
              log_fp.close()
         raise
     except Exception as e:
         logger.error(f"Failed to start SGLang server: {e}")
-        if log_fp: 
+        if log_fp:
              log_fp.close()
         raise
     return proc
@@ -149,7 +149,7 @@ def is_server_ready(url: str, timeout: float = 60.0, poll_interval: float = 2.0)
     logger.info(f"Checking server readiness at {url} (timeout: {timeout}s)")
     while time.monotonic() - start_time < timeout:
         try:
-            response = requests.get(url, timeout=poll_interval) 
+            response = requests.get(url, timeout=poll_interval)
             if response.status_code == 200:
                 logger.info(f"Server at {url} is ready (status 200 OK).")
                 return True
@@ -171,7 +171,7 @@ class DummyModelForEmbeddedServer(torch.nn.Module):
     def __init__(self, model_name="dummy"):
         super().__init__()
         self.model_name = model_name
-        self.dummy_param = torch.nn.Parameter(torch.randn(1)) 
+        self.dummy_param = torch.nn.Parameter(torch.randn(1))
 
     def generate(self, input_text: str, **kwargs):
         return f"Generated text for '{input_text}' by {self.model_name}"
@@ -192,7 +192,7 @@ class ChatMessage(BaseModel):
     content: str
 
 class ChatCompletionRequest(BaseModel):
-    model: str 
+    model: str
     messages: List[ChatMessage]
     # temperature: Optional[float] = 0.7
     # max_tokens: Optional[int] = 256
@@ -203,10 +203,10 @@ class ChatCompletionResponseChoice(BaseModel):
     finish_reason: str = "stop"
 
 class ChatCompletionResponse(BaseModel):
-    id: str = "chatcmpl-dummy" 
+    id: str = "chatcmpl-dummy"
     object: str = "chat.completion"
     created: int = field(default_factory=lambda: int(time.time())) # Use field for dynamic default
-    model: str 
+    model: str
     choices: List[ChatCompletionResponseChoice]
 
 
@@ -224,24 +224,24 @@ class EmbeddedInferenceServer:
 
     def _register_routes(self):
         @self.app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
-        async def chat_completions(request: ChatCompletionRequest): 
+        async def chat_completions(request: ChatCompletionRequest):
             logger.debug(f"Received chat completion request: {request.dict()}")
             prompt = "No user message found"
             for msg in reversed(request.messages):
                 if msg.role == "user":
                     prompt = msg.content
                     break
-            generated_text = self.model.generate(input_text=prompt) 
+            generated_text = self.model.generate(input_text=prompt)
             response_message = ChatMessage(role="assistant", content=generated_text)
             choice = ChatCompletionResponseChoice(message=response_message)
             # Make sure 'created' is set dynamically if not using default_factory in Pydantic model
             return ChatCompletionResponse(
                 created=int(time.time()), # Explicitly set if not using default_factory
-                model=self.model_name, 
+                model=self.model_name,
                 choices=[choice]
             )
 
-        @self.app.get("/v1/models") 
+        @self.app.get("/v1/models")
         async def get_models():
             logger.debug("Received request for /v1/models")
             return {
@@ -249,11 +249,11 @@ class EmbeddedInferenceServer:
                 "data": [{
                     "id": self.model_name,
                     "object": "model",
-                    "owned_by": "organization-owner", 
+                    "owned_by": "organization-owner",
                     "permission": []
                 }]
             }
-        
+
         @self.app.get("/health")
         async def health_check():
             logger.debug("Received request for /health")
@@ -272,10 +272,10 @@ class EmbeddedInferenceServer:
     def stop(self):
         if self.uvicorn_server is not None:
             logger.info("Attempting to stop Uvicorn server...")
-            self.uvicorn_server.should_exit = True 
+            self.uvicorn_server.should_exit = True
             if self.server_thread is not None and self.server_thread.is_alive():
                 logger.info("Waiting for server thread to join...")
-                self.server_thread.join(timeout=10) 
+                self.server_thread.join(timeout=10)
                 if self.server_thread.is_alive():
                     logger.warning("Server thread did not exit cleanly after 10s.")
                 else:
@@ -290,7 +290,7 @@ class EmbeddedInferenceServer:
         logger.info(f"Loading new weights into embedded model '{self.model_name}'.")
         try:
             self.model.load_state_dict(state_dict)
-            self.model.to(self.device) 
+            self.model.to(self.device)
             logger.info("Successfully loaded new weights.")
         except Exception as e:
             logger.error(f"Error loading weights into embedded model: {e}")

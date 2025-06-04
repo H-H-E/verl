@@ -25,7 +25,7 @@ except ImportError:
 
 
 # Configure logging
-LOGS_DIR_LAUNCHER = Path("logs") 
+LOGS_DIR_LAUNCHER = Path("logs")
 LOGS_DIR_LAUNCHER.mkdir(exist_ok=True)
 
 logger_launcher = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def start_atropos_api(port: int, host: str = "localhost", readiness_timeout: flo
     Returns the Popen object for the server process, or None if startup fails.
     '''
     log_file = LOGS_DIR_LAUNCHER / f"atropos_api_{port}.log"
-    
+
     command = [
         "atropos", "run-api",
         "--port", str(port),
@@ -78,7 +78,7 @@ def start_atropos_api(port: int, host: str = "localhost", readiness_timeout: flo
             if process:
                 if helpers_imported and 'generic_stop_server' in globals():
                     generic_stop_server(process, server_name=f"Atropos API (port {port})")
-                else: 
+                else:
                     logger_launcher.warning("generic_stop_server not available for cleanup. Using basic kill.")
                     process.kill() # Basic kill if helper is missing
                     process.wait(timeout=5)
@@ -91,7 +91,7 @@ def start_atropos_api(port: int, host: str = "localhost", readiness_timeout: flo
 
     except FileNotFoundError:
         logger_launcher.error("Atropos command 'atropos' not found. Ensure Atropos is installed and in PATH.")
-        if process and process.poll() is None: 
+        if process and process.poll() is None:
             process.kill()
         # log_fp needs to be closed here as Popen might not have taken full ownership or failed early
         if log_fp and not log_fp.closed:
@@ -99,7 +99,7 @@ def start_atropos_api(port: int, host: str = "localhost", readiness_timeout: flo
         return None
     except Exception as e:
         logger_launcher.error(f"Failed to start or check Atropos API server: {e}")
-        if process and process.poll() is None: 
+        if process and process.poll() is None:
             if helpers_imported and 'generic_stop_server' in globals():
                 generic_stop_server(process, server_name=f"Atropos API (port {port})")
             else:
@@ -118,13 +118,13 @@ def stop_atropos_api(proc: Optional[subprocess.Popen]) -> None:
     if not proc:
         logger_launcher.info("Atropos API process is None (not started or already handled).")
         return
-        
+
     if proc.poll() is not None:
         logger_launcher.info(f"Atropos API process (PID: {proc.pid}) already stopped.")
         return
 
     logger_launcher.info(f"Stopping Atropos API server (PID: {proc.pid})...")
-    
+
     if helpers_imported and 'generic_stop_server' in globals():
         generic_stop_server(proc, server_name="Atropos API Server")
     else:
@@ -138,7 +138,7 @@ def stop_atropos_api(proc: Optional[subprocess.Popen]) -> None:
                 logger_launcher.error(f"Error closing Atropos API log stream: {e_close}")
         try:
             proc.terminate()
-            proc.wait(timeout=10) 
+            proc.wait(timeout=10)
             logger_launcher.info(f"Atropos API server (PID: {proc.pid}) terminated.")
         except subprocess.TimeoutExpired:
             logger_launcher.warning(f"Atropos API server (PID: {proc.pid}) did not terminate after 10s. Sending SIGKILL...")

@@ -6,8 +6,8 @@ import yaml # Add PyYAML import
 @dataclass
 class AtroposConfig:
     # Required fields (no defaults in terms of user input)
-    environments: List[str] = field(default_factory=list) 
-    model: str = "" 
+    environments: List[str] = field(default_factory=list)
+    model: str = ""
 
     # Fields with defaults
     rollout_server_port: int = 8000
@@ -16,14 +16,14 @@ class AtroposConfig:
     reference_model: Optional[str] = None
     batch_size: int = 12
     tensor_parallel: int = 1
-    
+
     # VeRL-PPO hyperparams (with defaults)
     lr: float = 5e-6
     clip_ratio: float = 0.2
     ppo_epochs: int = 4
     kl_coef: float = 0.1
     entropy_coef: float = 0.01
-    
+
     num_iterations: int = 1000
 
     def __post_init__(self):
@@ -37,7 +37,7 @@ class AtroposConfig:
 
 def load_atropos_config(config_path: Union[str, Path]) -> AtroposConfig:
     '''Loads Atropos configuration from a YAML file, validates, and returns an AtroposConfig object.'''
-    
+
     # Ensure config_path is a Path object
     if isinstance(config_path, str):
         config_path = Path(config_path)
@@ -56,10 +56,10 @@ def load_atropos_config(config_path: Union[str, Path]) -> AtroposConfig:
 
     # Create a default config instance
     # The dataclass defaults will be used for any keys not in yaml_data
-    
+
     # Get all field names from the dataclass
     config_field_names = {f.name for f in fields(AtroposConfig)}
-    
+
     # Filter yaml_data to only include keys that are actual fields in AtroposConfig
     filtered_yaml_data = {k: v for k, v in yaml_data.items() if k in config_field_names}
 
@@ -72,5 +72,5 @@ def load_atropos_config(config_path: Union[str, Path]) -> AtroposConfig:
         # or if there's a type mismatch that dataclasses can't handle directly.
         # Our filtering should prevent unknown keys, but type mismatches might still occur.
         raise ValueError(f"Error creating AtroposConfig from YAML data: {e}")
-        
+
     return config

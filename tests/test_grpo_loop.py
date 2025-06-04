@@ -10,29 +10,29 @@ import logging # For caplog level setting
 
 # Components to test/use
 from verl.atropos_config import AtroposConfig
-from verl.train.grpo_trainer import AtroposGrpoTrainer, DummyTrainingModel 
+from verl.train.grpo_trainer import AtroposGrpoTrainer, DummyTrainingModel
 # AtroposGrpoTrainer uses dummy versions of model loaders and tokenizers by default.
 from verl.atropos_inference import is_server_ready # For robust server check
 
 # --- Mock Atropos API Server ---
-MOCK_API_PORT_GRPO_LOOP_TEST = 8111 
+MOCK_API_PORT_GRPO_LOOP_TEST = 8111
 MOCK_API_HOST_GRPO_LOOP_TEST = "localhost"
 
 @pytest.fixture(scope="function")
 def mock_rollout_api_for_grpo_loop():
     app = FastAPI()
-    
+
     fixed_rollout_group = {
         "prompt": "FixedP", # Shorter for small max_seq_len
         "response": "FixedR",
-        "reward": 1.0, 
+        "reward": 1.0,
         # For dummy model and loss, specific logprobs/advantages might not be critical,
         # as long as advantages are positive for this reward.
         # AtroposDataset's _to_tensors will create dummy advantages/logprobs.
         # If we want to ensure advantages are positive for the response part:
         # "token_advantages": [1.0, 1.0, 1.0, 1.0, 1.0] # Assuming "FixedR" is 5 tokens
     }
-    
+
     @app.get("/batch")
     async def get_rollout_batch(size: int):
         return [fixed_rollout_group for _ in range(size)]
@@ -45,15 +45,15 @@ def mock_rollout_api_for_grpo_loop():
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
-    
+
     ready_url = f"http://{MOCK_API_HOST_GRPO_LOOP_TEST}:{MOCK_API_PORT_GRPO_LOOP_TEST}/health"
     if not is_server_ready(ready_url, timeout=10.0, poll_interval=0.2): # pragma: no cover
         server.should_exit = True # Attempt to clean up if server failed
         thread.join(timeout=1)
         pytest.skip(f"Mock GRPO API server on port {MOCK_API_PORT_GRPO_LOOP_TEST} did not become ready.")
 
-    yield 
-    
+    yield
+
     server.should_exit = True
     thread.join(timeout=5)
 
@@ -63,16 +63,16 @@ def test_grpo_training_loop_decreases_loss(mock_rollout_api_for_grpo_loop, caplo
     Tests the main training loop of AtroposGrpoTrainer for a few iterations.
     Asserts that the computed loss generally decreases.
     """
-    caplog.set_level(logging.INFO) 
+    caplog.set_level(logging.INFO)
 
     config = AtroposConfig(
-        model="dummy-grpo-model", 
+        model="dummy-grpo-model",
         environments=["grpo_test_env"],
         rollout_server_port=MOCK_API_PORT_GRPO_LOOP_TEST,
-        batch_size=2, 
-        ppo_epochs=1, 
-        lr=1e-3,      
-        entropy_coef=0.0, 
+        batch_size=2,
+        ppo_epochs=1,
+        lr=1e-3,
+        entropy_coef=0.0,
         kl_coef=0.0,
         # num_iterations is a field in AtroposConfig, default is 1000
         # We will call trainer.train with a specific, small number.
@@ -119,12 +119,12 @@ def test_grpo_training_loop_decreases_loss(mock_rollout_api_for_grpo_loop, caplo
         trainer.compute_loss = original_compute_loss_method
         if hasattr(trainer, 'cleanup'): # pragma: no cover
             trainer.cleanup()
-    
+
     assert len(losses_recorded_in_test) == num_train_iterations * config.ppo_epochs, \
         f"Expected {num_train_iterations * config.ppo_epochs} loss values, got {len(losses_recorded_in_test)}. Losses: {losses_recorded_in_test}"
 
-    print(f"Losses recorded during test: {losses_recorded_in_test}") 
-    
+    print(f"Losses recorded during test: {losses_recorded_in_test}")
+
     # Check for general decrease. For dummy model and simple data, it might be noisy.
     # A more robust check is if the average of the second half is less than avg of first half.
     if len(losses_recorded_in_test) > 1:
@@ -142,17 +142,17 @@ def test_grpo_training_loop_decreases_loss(mock_rollout_api_for_grpo_loop, caplo
         # This test truly relies on a semi-functional compute_loss.
         # For now, let's assert that the loop runs and we get losses.
         # The "decrease" part is aspirational until compute_loss is real.
-        
+
         # If all losses are 0.0 (due to dummy compute_loss), this test won't show decrease.
         # We need compute_loss to be somewhat functional for this.
         # Given the current state (compute_loss is a placeholder returning 0.0),
         # all losses will be 0.0. This assertion will fail.
         # This highlights that test_grpo_loop needs compute_loss to be implemented.
         # For now, this assertion will be # PENDING REAL COMPUTE_LOSS
-        
+
         # Temporary assertion: just check if it runs and produces numbers
         assert all(isinstance(l, float) for l in losses_recorded_in_test), "All recorded losses should be floats."
-        
+
         # If compute_loss were real:
         # assert last_loss < first_loss, \
         #     f"Loss did not decrease: Start Loss={first_loss}, End Loss={last_loss}. Losses: {losses_recorded_in_test}"

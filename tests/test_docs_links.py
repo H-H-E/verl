@@ -5,7 +5,7 @@ import re
 import logging # For logging checked paths
 
 # Define project root assuming tests are in tests/something.py
-PROJECT_ROOT_DOC_LINKS = Path(__file__).resolve().parent.parent 
+PROJECT_ROOT_DOC_LINKS = Path(__file__).resolve().parent.parent
 
 QUICK_START_MD_PATH = PROJECT_ROOT_DOC_LINKS / "docs" / "quick_start.md"
 
@@ -18,7 +18,7 @@ def test_quick_start_md_exists():
 
 def test_quick_start_referenced_files_exist():
     """
-    Parses docs/quick_start.md to find references to local files 
+    Parses docs/quick_start.md to find references to local files
     and checks if they exist relative to the project root.
     """
     if not QUICK_START_MD_PATH.exists(): # pragma: no cover (covered by previous test)
@@ -31,7 +31,7 @@ def test_quick_start_referenced_files_exist():
 
     # Regex to find all content within backticks: `(.*?)`
     found_paths_in_backticks = re.findall(r"`([^`]+)`", content)
-    
+
     # Predefined list of paths expected to be mentioned and exist.
     # These are based on the content of docs/quick_start.md from Task 20.1.
     # Paths are relative to the project root.
@@ -40,17 +40,17 @@ def test_quick_start_referenced_files_exist():
         "recipe/atropos/launch_atropos_verl.py",
         "requirements.txt",
         # Directories mentioned as being created or used (existence check)
-        "logs/", 
+        "logs/",
         "runs/",
         "metrics/",
         "environments/" # Default path for --env-script-path
     ]
-    
+
     # Filter and add plausible paths from backticked content
     for potential_path in found_paths_in_backticks:
         # Normalize: remove trailing punctuation that might be part of the sentence.
         cleaned_path = potential_path.rstrip(".,;:!?")
-        
+
         # Heuristic to identify if it's a plausible file/dir path:
         # - Not a URL
         # - Contains path characters like '/' or known extensions or is a known filename
@@ -65,7 +65,7 @@ def test_quick_start_referenced_files_exist():
            cleaned_path in ["requirements.txt", "setup.py"] or \
            any(known_dir in cleaned_path for known_dir in ["configs", "recipe", "docs", "tests", "verl", "scripts", "logs", "runs", "metrics", "environments"]):
             is_plausible_path = True
-            
+
         if is_plausible_path and cleaned_path not in expected_paths_to_check:
             # Further filter: avoid adding command snippets that are not paths
             # e.g., `python recipe/atropos/launch_atropos_verl.py --config ...` -> we only want the script path
@@ -84,7 +84,7 @@ def test_quick_start_referenced_files_exist():
 
     # Remove duplicates and sort for consistent test output
     unique_paths_to_check = sorted(list(set(expected_paths_to_check)))
-    
+
     if not unique_paths_to_check: # pragma: no cover (should always have predefined paths)
         pytest.skip("No file paths found or configured to check in quick_start.md content.")
 
@@ -93,19 +93,19 @@ def test_quick_start_referenced_files_exist():
         # Ensure path is treated as relative to project root
         # Path.is_absolute() can be used if we need to handle absolute paths differently
         full_path = PROJECT_ROOT_DOC_LINKS / file_path_str
-        
+
         # For paths ending with '/', we check if it's a directory.
         # For others, we check if it's a file (or could be a dir if no extension).
         # .exists() works for both files and directories.
         if not full_path.exists():
             missing_files.append(file_path_str)
-            
+
     if missing_files:
         # Log for easier debugging in CI
         logger_doc_links.error(f"Missing files/directories from {QUICK_START_MD_PATH}: {missing_files}")
         for mf in missing_files:
              logger_doc_links.error(f"Expected at: {PROJECT_ROOT_DOC_LINKS / mf}")
-    
+
     assert not missing_files, \
         f"The following files/directories referenced in {QUICK_START_MD_PATH} do not exist at project root or are malformed: {missing_files}"
 

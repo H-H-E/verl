@@ -6,7 +6,7 @@ import subprocess
 import shlex # For parsing command lines safely
 import logging
 
-PROJECT_ROOT_DOC_CMDS = Path(__file__).resolve().parent.parent 
+PROJECT_ROOT_DOC_CMDS = Path(__file__).resolve().parent.parent
 QUICK_START_MD_PATH_CMDS = PROJECT_ROOT_DOC_CMDS / "docs" / "quick_start.md"
 
 logger_doc_cmds = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ def extract_code_blocks(markdown_content: str) -> List[str]:
     for match in matches:
         lang = match.group(1).lower().strip()
         code = match.group(2).strip()
-        
+
         # We are interested in shell-like commands and python commands.
         # Shell: bash, shell, sh, zsh, or no language specified (empty string for lang)
         # Python: python, py
@@ -41,7 +41,7 @@ def prepare_command_for_dry_run(line: str) -> Optional[str]:
     If the line is a comment, empty, or clearly not a command, returns None.
     """
     stripped_line = line.strip()
-    
+
     # Ignore empty lines and comments
     if not stripped_line or stripped_line.startswith("#"):
         return None
@@ -62,13 +62,13 @@ def prepare_command_for_dry_run(line: str) -> Optional[str]:
        re.match(r"^\.\.\.", stripped_line_no_prompt) or \
        re.match(r"^\[.*?\]$", stripped_line_no_prompt): # e.g. [INFO] or [ERROR]
         return None
-        
+
     # Attempt to parse with shlex to detect basic syntax errors like unmatched quotes early.
     # If shlex fails, it's a strong indicator of a shell syntax error.
     # In such a case, echoing the raw (but prompt-stripped) line is still a valid test
     # to see if the shell itself chokes on it.
     try:
-        _ = shlex.split(stripped_line_no_prompt) 
+        _ = shlex.split(stripped_line_no_prompt)
     except ValueError:
         logger_doc_cmds.warning(f"shlex parsing failed for line (potential syntax error): '{stripped_line_no_prompt}'. Will still attempt echo dry-run.")
         # Even if shlex fails, prefix with echo to test shell's own parsing of the problematic line.
@@ -87,7 +87,7 @@ def test_docs_commands_syntax(caplog):
     prepares them by prefixing with 'echo', and runs them via shell
     to check for basic syntax validity (expecting exit code 0).
     """
-    caplog.set_level(logging.DEBUG) 
+    caplog.set_level(logging.DEBUG)
     logger_doc_cmds.info(f"Testing command syntax in {QUICK_START_MD_PATH_CMDS}")
 
     try:
@@ -123,7 +123,7 @@ def test_docs_commands_syntax(caplog):
             # Using shell=True because `command_to_run` is a full string to be parsed by shell.
             # This is safe as it's prefixed with `echo`.
             result = subprocess.run(command_to_run, shell=True, capture_output=True, text=True, check=False, timeout=5)
-            
+
             if result.returncode != 0:
                 failed_commands.append({
                     "original_line": original_line,
@@ -144,7 +144,7 @@ def test_docs_commands_syntax(caplog):
                 "dry_run_command": command_to_run,
                 "error": str(e)
             })
-            
+
     if failed_commands:
         error_messages = ["One or more document commands failed syntax dry-run:"]
         for failure in failed_commands:
@@ -158,7 +158,7 @@ def test_docs_commands_syntax(caplog):
                 error_messages.append(f"  Error        : {failure['error']}")
             error_messages.append("-" * 20)
         pytest.fail("\n".join(error_messages))
-            
+
     logger_doc_cmds.info("All document command lines dry-ran successfully via 'echo'.")
 
 ```

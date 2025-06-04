@@ -18,9 +18,9 @@ class DummyTokenizer:
         tokens = []
         for char_token in list(text): # Simple char-level tokenization for dummy
             tokens.append(self.vocab.get(char_token, self.vocab["<unk>"]))
-        
+
         effective_max_length = max_length if max_length is not None else self.max_length
-        
+
         attention_mask = [1] * len(tokens)
 
         if len(tokens) < effective_max_length and padding == 'max_length':
@@ -47,17 +47,17 @@ class DummyTokenizer:
     def batch_encode_plus(self, texts: List[str], add_special_tokens=True, truncation=True, max_length=None, padding='max_length', return_tensors="pt", return_attention_mask=True):
         all_input_ids = []
         all_attention_masks = []
-        
+
         effective_max_length = max_length if max_length is not None else self.max_length
 
         for text in texts:
             # Use the single encode method
             encoded_output = self.encode(
-                text, 
-                add_special_tokens=add_special_tokens, 
-                truncation=truncation, 
-                max_length=effective_max_length, 
-                padding=padding, 
+                text,
+                add_special_tokens=add_special_tokens,
+                truncation=truncation,
+                max_length=effective_max_length,
+                padding=padding,
                 return_tensors=None, # Get lists first
                 return_attention_mask=return_attention_mask
             )
@@ -72,7 +72,7 @@ class DummyTokenizer:
             if return_attention_mask:
                 batch["attention_mask"] = torch.tensor(all_attention_masks, dtype=torch.long)
             return batch
-        
+
         # Fallback if not returning tensors
         if return_attention_mask:
             return [{"input_ids": ids, "attention_mask": mask} for ids, mask in zip(all_input_ids, all_attention_masks)]
@@ -83,7 +83,7 @@ class AtroposDataset(IterableDataset):
     def __init__(self, api_url: str, batch_size: int, tokenizer: Any, max_seq_len: int = 512):
         self.api_url = api_url.rstrip("/")
         self.batch_size = batch_size
-        self.tokenizer = tokenizer 
+        self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
 
         self.logger = logging.getLogger(__name__)
@@ -95,24 +95,24 @@ class AtroposDataset(IterableDataset):
         # self.api_url and self.batch_size are from __init__
         fetch_url = f"{self.api_url}/batch?size={self.batch_size}"
         # Ensure logger is present, initialized in __init__
-        
+
         self.logger.debug(f"Fetching rollout batch: URL='{fetch_url}', Requested BatchSize={self.batch_size}")
-        
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(fetch_url) as response:
                     status_code = response.status # Get status code
                     self.logger.debug(f"Received response from {fetch_url}, Status={status_code}")
-                    
+
                     response.raise_for_status() # Raises an error for bad status codes (4xx or 5xx)
-                    
+
                     # Ensure response is valid JSON before parsing
                     if 'application/json' not in response.content_type:
                         self.logger.error(f"Unexpected content type from {fetch_url}: {response.content_type}. Expected application/json.")
                         return [] # Or handle as error appropriate for your case
 
                     data = await response.json()
-                    
+
                     if not isinstance(data, list):
                         self.logger.error(f"Unexpected data format from {fetch_url}. Expected a list of groups, got {type(data)}.")
                         # Potentially log part of the data if small and safe for debugging
@@ -126,7 +126,7 @@ class AtroposDataset(IterableDataset):
             return []
         except aiohttp.ClientError as e_client: # Other client errors (connection, timeout etc.)
             self.logger.error(f"AIOHTTP client error fetching from {fetch_url}: {e_client}")
-            return [] 
+            return []
         except Exception as e_general: # Catch-all for other unexpected errors (e.g., JSON parsing if not caught by content_type check)
             self.logger.error(f"Unexpected error fetching or parsing data from {fetch_url}: {e_general}", exc_info=True)
             return []
@@ -138,14 +138,14 @@ class AtroposDataset(IterableDataset):
 
         batch_texts = []
         # Store prompt token lengths to be included in the output batch
-        batch_prompt_token_lengths: List[int] = [] 
-        
+        batch_prompt_token_lengths: List[int] = []
+
         for group in data:
             prompt = group.get("prompt", "")
             response = group.get("response", "")
-            text_sequence = prompt + response 
+            text_sequence = prompt + response
             batch_texts.append(text_sequence)
-            
+
             # Calculate prompt_token_len using the tokenizer
             # This should be the length of the prompt part *as it appears in the tokenized text_sequence*
             # For simplicity and consistency with current _to_tensors, tokenize prompt separately without special tokens
@@ -197,7 +197,7 @@ class AtroposDataset(IterableDataset):
 
             token_advantages_data = group.get("token_advantages")
             reward_data = group.get("reward")
-            logprobs_data = group.get("logprobs") 
+            logprobs_data = group.get("logprobs")
 
             for j in range(actual_seq_len):
                 if j < prompt_token_len_val:
@@ -205,8 +205,8 @@ class AtroposDataset(IterableDataset):
                     if logprobs_data and j < len(logprobs_data):
                         old_logprobs[i, j] = float(logprobs_data[j])
                     else:
-                        old_logprobs[i, j] = 0.0 
-                else: 
+                        old_logprobs[i, j] = 0.0
+                else:
                     response_token_index = j - prompt_token_len_val
                     if token_advantages_data and response_token_index < len(token_advantages_data):
                         advantages[i, j] = float(token_advantages_data[response_token_index])
@@ -235,7 +235,7 @@ class AtroposDataset(IterableDataset):
                              old_logprobs[i, j] = 0.0
                     else:
                         old_logprobs[i, j] = 0.0
-                        
+
         return {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
@@ -253,23 +253,23 @@ class AtroposDataset(IterableDataset):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             self.logger.debug("Created new event loop for this thread.")
-        
+
         while True:
             try:
                 data = loop.run_until_complete(self._fetch_once())
-            except Exception as e: 
+            except Exception as e:
                 self.logger.error(f"Error in event loop running _fetch_once: {e}")
-                break 
+                break
 
             if not data:
                 self.logger.info("No data received from _fetch_once, stopping iteration.")
-                break 
-            
+                break
+
             try:
                 tensors = self._to_tensors(data)
-                if not tensors: 
+                if not tensors:
                     self.logger.warning("Skipping batch due to _to_tensors returning empty.")
-                    continue 
+                    continue
                 yield tensors
             except Exception as e:
                 self.logger.error(f"Error in _to_tensors: {e}. Skipping batch.")
