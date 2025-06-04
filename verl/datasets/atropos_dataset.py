@@ -139,6 +139,7 @@ class AtroposDataset(IterableDataset):
         batch_texts = []
         # Store prompt token lengths to be included in the output batch
         batch_prompt_token_lengths: List[int] = []
+        batch_response_token_lengths: List[int] = []  # New: store response token lengths for advantage logic
 
         for group in data:
             prompt = group.get("prompt", "")
@@ -173,6 +174,25 @@ class AtroposDataset(IterableDataset):
                 prompt_token_len_val = 0
             batch_prompt_token_lengths.append(prompt_token_len_val)
 
+            """Determine response token length (without prompt, without special tokens like EOS)."""
+            try:
+                if hasattr(self.tokenizer, 'encode') and callable(self.tokenizer.encode):
+                    response_only_encoded = self.tokenizer.encode(response, add_special_tokens=False)
+                    if isinstance(response_only_encoded, dict) and "input_ids" in response_only_encoded:
+                        response_token_len_val = len(response_only_encoded["input_ids"])
+                    elif isinstance(response_only_encoded, list):
+                        response_token_len_val = len(response_only_encoded)
+                    else:
+                        self.logger.warning(f"Unexpected output from tokenizer.encode for response: {response_only_encoded}. Defaulting response length to 0.")
+                        response_token_len_val = 0
+                else:
+                    response_token_len_val = 0
+            except Exception as e_tok_resp:
+                self.logger.error(f"Error tokenizing response '{response}' separately: {e_tok_resp}. Defaulting response length to 0.")
+                response_token_len_val = 0
+
+            batch_response_token_lengths.append(response_token_len_val)
+
         try:
             tokenized_batch = self.tokenizer.batch_encode_plus(
                 batch_texts, add_special_tokens=True, padding="max_length",
@@ -193,6 +213,7 @@ class AtroposDataset(IterableDataset):
         for i in range(current_batch_size):
             group = data[i]
             prompt_token_len_val = batch_prompt_token_lengths[i] # Use pre-calculated length
+            response_token_len_val = batch_response_token_lengths[i]
             actual_seq_len = int(attention_mask[i].sum())
 
             token_advantages_data = group.get("token_advantages")
@@ -210,7 +231,8 @@ class AtroposDataset(IterableDataset):
                     response_token_index = j - prompt_token_len_val
                     if token_advantages_data and response_token_index < len(token_advantages_data):
                         advantages[i, j] = float(token_advantages_data[response_token_index])
-                    elif reward_data is not None:
+                    elif reward_data is not None and response_token_index < response_token_len_val:
+                        # Apply scalar reward only to actual response tokens, not EOS/special tokens
                         advantages[i, j] = float(reward_data)
                     else:
                         advantages[i, j] = 0.0
@@ -241,7 +263,8 @@ class AtroposDataset(IterableDataset):
             "attention_mask": attention_mask,
             "advantages": advantages,
             "old_logprobs": old_logprobs,
-            "prompt_token_lengths": batch_prompt_token_lengths # Add this to the output
+            "prompt_token_lengths": batch_prompt_token_lengths,
+            "response_token_lengths": batch_response_token_lengths
         }
 
     def __iter__(self):

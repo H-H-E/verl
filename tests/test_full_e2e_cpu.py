@@ -174,4 +174,3 @@ def test_full_loop_cpu(e2e_cpu_config_file: Path, mock_e2e_atropos_api, e2e_dumm
     assert "Cleaning up GRPO trainer (handles its own inference server)..." in full_output
     assert ("EmbeddedInferenceServer stopped." in full_output or "ExternalInferenceWrapper: stop called." in full_output)
     assert "Cleanup finished." in full_output
-```

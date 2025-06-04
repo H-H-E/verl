@@ -10,7 +10,7 @@ import requests
 import threading # For running Uvicorn in a separate thread
 import uvicorn # For serving FastAPI app
 from fastapi import FastAPI, Request # Add FastAPI and Request
-from pydantic import BaseModel # For request body validation (optional but good practice)
+from pydantic import BaseModel, Field # For request body validation (optional but good practice)
 import torch # Assuming torch.device and torch.Tensor are used
 
 
@@ -171,7 +171,11 @@ class DummyModelForEmbeddedServer(torch.nn.Module):
     def __init__(self, model_name="dummy"):
         super().__init__()
         self.model_name = model_name
-        self.dummy_param = torch.nn.Parameter(torch.randn(1))
+        # Match TinyPolicy structure
+        vocab_size = 32000
+        hidden = 768
+        self.embed = torch.nn.Embedding(vocab_size, hidden)
+        self.lm_head = torch.nn.Linear(hidden, vocab_size, bias=False)
 
     def generate(self, input_text: str, **kwargs):
         return f"Generated text for '{input_text}' by {self.model_name}"
@@ -205,7 +209,7 @@ class ChatCompletionResponseChoice(BaseModel):
 class ChatCompletionResponse(BaseModel):
     id: str = "chatcmpl-dummy"
     object: str = "chat.completion"
-    created: int = field(default_factory=lambda: int(time.time())) # Use field for dynamic default
+    created: int = Field(default_factory=lambda: int(time.time())) # Use field for dynamic default
     model: str
     choices: List[ChatCompletionResponseChoice]
 

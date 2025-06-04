@@ -171,4 +171,3 @@ def test_memory_cleanup_cuda_empty_cache(mock_empty_cache):
 
     mock_empty_cache.assert_called_once()
 
-```

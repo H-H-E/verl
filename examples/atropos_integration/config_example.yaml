@@ -1,0 +1,31 @@
+# Atropos Integration Configuration Example
+# This configuration demonstrates the $2500 bounty implementation
+
+# Model Configuration
+model_name: "microsoft/DialoGPT-small"  # HuggingFace model name or local path
+device: "cuda"  # "cuda" or "cpu" - auto-detected if not specified
+
+# Inference Server Configuration
+policy_port: 8080      # Port for policy model inference server
+reference_port: 8081   # Port for reference model inference server
+
+# Atropos API Configuration  
+atropos_api_url: "http://localhost:9000"  # URL of Atropos rollout API
+
+# Training Configuration
+batch_size: 4          # Training batch size
+max_seq_len: 512       # Maximum sequence length
+learning_rate: 1e-5    # Learning rate for optimizer
+kl_coeff: 0.1          # KL divergence coefficient
+
+# Training Loop Configuration
+num_epochs: 10         # Number of training epochs
+update_frequency: 5    # Update inference weights every N steps
+
+# Logging
+log_level: "INFO"      # DEBUG, INFO, WARNING, ERROR
+
+# Advanced GRPO Parameters (optional)
+# max_grad_norm: 1.0   # Gradient clipping
+# warmup_steps: 100    # Learning rate warmup
+# save_frequency: 50   # Save checkpoint every N steps 
